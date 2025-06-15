@@ -94,3 +94,17 @@ struct WhileStatement : Statement {
     WhileStatement(std::unique_ptr<Expr> cond, std::vector<std::unique_ptr<Statement>> body)
         : condition(std::move(cond)), body(std::move(body)) {}
 };
+
+struct ForStatement : Statement {
+    std::unique_ptr<Statement> initializer;
+    std::unique_ptr<Expr> condition;
+    std::unique_ptr<Statement> increment;
+    std::vector<std::unique_ptr<Statement>> body;
+
+    ForStatement(std::unique_ptr<Statement> init,
+                 std::unique_ptr<Expr> cond,
+                 std::unique_ptr<Statement> incr,
+                 std::vector<std::unique_ptr<Statement>> body)
+        : initializer(std::move(init)), condition(std::move(cond)),
+          increment(std::move(incr)), body(std::move(body)) {}
+};

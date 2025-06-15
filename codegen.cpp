@@ -90,6 +90,14 @@ void execute(const Statement* stmt) {
                 execute(s.get());
             }
         }
+    } else if (auto forstmt = dynamic_cast<const ForStatement*>(stmt)) {
+        if (forstmt->initializer) execute(forstmt->initializer.get());
+        while (!forstmt->condition || evalExpr(forstmt->condition.get())) {
+            for (const auto& s : forstmt->body) {
+                execute(s.get());
+            }
+            if (forstmt->increment) execute(forstmt->increment.get());
+        }
     } else {
         throw std::runtime_error("Unsupported statement");
     }

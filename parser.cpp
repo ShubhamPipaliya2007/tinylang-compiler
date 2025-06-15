@@ -33,48 +33,35 @@ static std::unique_ptr<Expr> parsePrimary() {
 
     switch (token.type) {
         case TokenType::NUMBER:
-            // Literal number
             return std::make_unique<Number>(std::stoi(token.value));
-
         case TokenType::IDENTIFIER: {
-            // Could be either a variable or a function call
             std::string name = token.value;
-
             if (match(TokenType::LPAREN)) {
-                // Parse function call arguments
                 std::vector<std::unique_ptr<Expr>> args;
                 if (!match(TokenType::RPAREN)) {
                     do {
                         args.push_back(parseExpression());
                     } while (match(TokenType::COMMA));
-
                     if (!match(TokenType::RPAREN)) {
                         throw std::runtime_error("Expected ')' after arguments to function call");
                     }
                 }
-
                 return std::make_unique<CallExpr>(name, std::move(args));
             }
-
-            // It's a variable
             return std::make_unique<Variable>(name);
         }
-
         case TokenType::LPAREN: {
-            // Parenthesized expression
             auto expr = parseExpression();
             if (!match(TokenType::RPAREN)) {
                 throw std::runtime_error("Expected ')' after expression");
             }
             return expr;
         }
-
         default:
             throw std::runtime_error("Unexpected token in expression: '" + token.value + "'");
     }
 }
 
-// Precedence: * / + - > < == !=
 int getPrecedence(TokenType type) {
     switch (type) {
         case TokenType::MULTIPLICATION:
@@ -95,7 +82,6 @@ static std::unique_ptr<Expr> parseBinaryExpr(int minPrec) {
         TokenType opType = peek().type;
         int prec = getPrecedence(opType);
         if (prec < minPrec) break;
-
         Token op = advance();
         auto right = parseBinaryExpr(prec + 1);
         left = std::make_unique<BinaryExpr>(std::move(left), op.type, std::move(right));
@@ -107,42 +93,81 @@ static std::unique_ptr<Expr> parseExpression() {
     return parseBinaryExpr(1);
 }
 
-static std::unique_ptr<Statement> parseStatement() {
+static std::unique_ptr<Statement> parseSimpleAssignment() {
+    if (match(TokenType::INT)) {
+        if (peek().type != TokenType::IDENTIFIER)
+            throw std::runtime_error("Expected identifier after 'int'");
+        std::string name = advance().value;
+        if (!match(TokenType::ASSIGN))
+            throw std::runtime_error("Expected '=' after variable name");
+        auto expr = parseExpression();
+        return std::make_unique<Assignment>(name, std::move(expr));
+    } else if (peek().type == TokenType::IDENTIFIER) {
+        std::string name = advance().value;
+        if (!match(TokenType::ASSIGN))
+            throw std::runtime_error("Expected '=' after variable name");
+        auto expr = parseExpression();
+        return std::make_unique<Assignment>(name, std::move(expr));
+    }
+    throw std::runtime_error("Invalid assignment or expression");
+}
 
-    // Function Declaration
+static std::unique_ptr<Statement> parseStatement() {
     if (match(TokenType::COMEANDDO)) {
         return parseFunction();
     }
-
-    //While Loop Declaration
-    if (match(TokenType::WHILE)) {
-        if (!match(TokenType::LPAREN)) throw std::runtime_error("Expected '(' after while");
-        auto condition = parseExpression();
-        if (!match(TokenType::RPAREN)) throw std::runtime_error("Expected ')' after while condition");
-        if (!match(TokenType::LBRACE)) throw std::runtime_error("Expected '{' after while");
-    
+    if (match(TokenType::FOR)) {
+        if (!match(TokenType::LPAREN)) throw std::runtime_error("Expected '(' after 'for'");
+        std::unique_ptr<Statement> initializer = nullptr;
+        if (!check(TokenType::SEMICOLON)) {
+            initializer = parseSimpleAssignment();
+        }
+        if (!match(TokenType::SEMICOLON)) throw std::runtime_error("Expected ';' after initializer");
+        std::unique_ptr<Expr> condition = nullptr;
+        if (!check(TokenType::SEMICOLON)) {
+            condition = parseExpression();
+        }
+        if (!match(TokenType::SEMICOLON)) throw std::runtime_error("Expected ';' after condition");
+        std::unique_ptr<Statement> increment = nullptr;
+        if (!check(TokenType::RPAREN)) {
+            increment = parseSimpleAssignment();
+        }
+        if (!match(TokenType::RPAREN)) throw std::runtime_error("Expected ')' after increment");
+        if (!match(TokenType::LBRACE)) throw std::runtime_error("Expected '{' after for");
         std::vector<std::unique_ptr<Statement>> body;
         while (!check(TokenType::RBRACE)) {
             body.push_back(parseStatement());
         }
         match(TokenType::RBRACE);
-    
+        return std::make_unique<ForStatement>(
+            std::move(initializer),
+            std::move(condition),
+            std::move(increment),
+            std::move(body)
+        );
+    }
+    if (match(TokenType::WHILE)) {
+        if (!match(TokenType::LPAREN)) throw std::runtime_error("Expected '(' after while");
+        auto condition = parseExpression();
+        if (!match(TokenType::RPAREN)) throw std::runtime_error("Expected ')' after while condition");
+        if (!match(TokenType::LBRACE)) throw std::runtime_error("Expected '{' after while");
+        std::vector<std::unique_ptr<Statement>> body;
+        while (!check(TokenType::RBRACE)) {
+            body.push_back(parseStatement());
+        }
+        match(TokenType::RBRACE);
         return std::make_unique<WhileStatement>(std::move(condition), std::move(body));
-    }    
-
-    // If statement
+    }
     if (match(TokenType::IF)) {
         if (!match(TokenType::LPAREN)) throw std::runtime_error("Expected '(' after 'if'");
         auto condition = parseExpression();
         if (!match(TokenType::RPAREN)) throw std::runtime_error("Expected ')' after condition");
         if (!match(TokenType::LBRACE)) throw std::runtime_error("Expected '{' after if condition");
-
         std::vector<std::unique_ptr<Statement>> thenBlock;
         while (!check(TokenType::RBRACE)) {
             thenBlock.push_back(parseStatement());
         }
         match(TokenType::RBRACE);
-
         std::vector<std::unique_ptr<Statement>> elseBlock;
         if (match(TokenType::ELSE)) {
             if (!match(TokenType::LBRACE)) throw std::runtime_error("Expected '{' after else");
@@ -151,15 +176,12 @@ static std::unique_ptr<Statement> parseStatement() {
             }
             match(TokenType::RBRACE);
         }
-
         return std::make_unique<IfStatement>(
             std::move(condition),
             std::move(thenBlock),
             std::move(elseBlock)
         );
     }
-
-    // Variable declaration
     if (match(TokenType::INT)) {
         if (match(TokenType::COMEANDDO)) {
             return parseFunction();
@@ -167,17 +189,13 @@ static std::unique_ptr<Statement> parseStatement() {
         if (peek().type != TokenType::IDENTIFIER)
             throw std::runtime_error("Expected identifier after 'int'");
         std::string name = advance().value;
-
         if (!match(TokenType::ASSIGN))
             throw std::runtime_error("Expected '=' after variable name");
         auto expr = parseExpression();
         if (!match(TokenType::SEMICOLON))
             throw std::runtime_error("Expected ';' after expression");
-
         return std::make_unique<Assignment>(name, std::move(expr));
     }
-
-    // Print
     if (match(TokenType::PRINT)) {
         if (!match(TokenType::LPAREN))
             throw std::runtime_error("Expected '(' after print");
@@ -188,25 +206,20 @@ static std::unique_ptr<Statement> parseStatement() {
             throw std::runtime_error("Expected ';' after print");
         return std::make_unique<Print>(std::move(expr));
     }
-
-    // Return
     if (match(TokenType::RETURN)) {
         auto expr = parseExpression();
         if (!match(TokenType::SEMICOLON))
             throw std::runtime_error("Expected ';' after return");
         return std::make_unique<Return>(std::move(expr));
     }
-    // Reassignment like x = x + 1;
     if (peek().type == TokenType::IDENTIFIER && tokens[current + 1].type == TokenType::ASSIGN) {
-        std::string name = advance().value; // identifier
-        match(TokenType::ASSIGN);           // consume '='
+        std::string name = advance().value;
+        match(TokenType::ASSIGN);
         auto expr = parseExpression();
         if (!match(TokenType::SEMICOLON))
             throw std::runtime_error("Expected ';' after assignment");
         return std::make_unique<Assignment>(name, std::move(expr));
     }
-
-    // Expression statement
     auto expr = parseExpression();
     if (!match(TokenType::SEMICOLON))
         throw std::runtime_error("Expected ';' after expression");
@@ -217,10 +230,9 @@ std::vector<std::unique_ptr<Statement>> parse(const std::vector<Token>& inputTok
     tokens = inputTokens;
     current = 0;
     std::vector<std::unique_ptr<Statement>> statements;
-
     while (peek().type != TokenType::END) {
-        statements.push_back(parseStatement()); 
-    }    
+        statements.push_back(parseStatement());
+    }
     return statements;
 }
 
@@ -239,30 +251,20 @@ static std::vector<std::string> parseParameterList() {
 }
 
 static std::unique_ptr<Statement> parseFunction() {
-    // Function name
     if (peek().type != TokenType::IDENTIFIER)
         throw std::runtime_error("Expected function name after 'ComeAndDo'");
-
-    std::string name = advance().value; // consume function name
-
+    std::string name = advance().value;
     if (!match(TokenType::LPAREN))
         throw std::runtime_error("Expected '(' after function name");
-
     auto parameters = parseParameterList();
-
     if (!match(TokenType::LBRACE))
         throw std::runtime_error("Expected '{' to begin function body");
-
-    // Declare the body correctly
     std::vector<std::unique_ptr<Statement>> bodyStmts;
     while (!check(TokenType::RBRACE)) {
         bodyStmts.push_back(parseStatement());
     }
-
     if (!match(TokenType::RBRACE))
         throw std::runtime_error("Expected '}' after function body");
-
-    // Now pass it correctly
     return std::make_unique<FunctionDef>(
         name,
         std::move(parameters),

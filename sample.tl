@@ -1,8 +1,8 @@
-ComeAndDo hello(x) {
-    while (x < 10) {
-        print(x);
-        x = x + 1;
+ComeAndDo count() {
+    for (int i = 0; i < 10; i = i + 1) {
+        print(i);
     }
+
 }
 
-hello(5);
+count();

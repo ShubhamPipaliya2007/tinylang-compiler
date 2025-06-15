@@ -26,6 +26,7 @@ std::vector<Token> tokenize(const std::string& input) {
             else if (id == "int") tokens.push_back({TokenType::INT, id});
             else if (id == "ComeAndDo") tokens.push_back({TokenType::COMEANDDO, id});
             else if (id == "while") tokens.push_back({TokenType::WHILE, id});
+            else if (id == "for") tokens.push_back({TokenType::FOR, id});
             else tokens.push_back({TokenType::IDENTIFIER, id});
         }
         else if (std::isdigit(c)) {
