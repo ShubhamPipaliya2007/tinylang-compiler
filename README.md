@@ -17,6 +17,7 @@
 - Expression statements
 - VS Code extension for `.tl` syntax highlighting
 - Published on the Visual Studio Marketplace
+- Data Types: int, bool, String
 
 ---
 

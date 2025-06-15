@@ -34,6 +34,13 @@ static std::unique_ptr<Expr> parsePrimary() {
     switch (token.type) {
         case TokenType::NUMBER:
             return std::make_unique<Number>(std::stoi(token.value));
+
+        case TokenType::BOOLEAN_LITERAL:
+            return std::make_unique<BoolLiteral>(token.value == "true");
+
+        case TokenType::STRING_LITERAL:
+            return std::make_unique<StringLiteral>(token.value);  // ensure lexer stores the string literal correctly
+
         case TokenType::IDENTIFIER: {
             std::string name = token.value;
             if (match(TokenType::LPAREN)) {
@@ -50,13 +57,14 @@ static std::unique_ptr<Expr> parsePrimary() {
             }
             return std::make_unique<Variable>(name);
         }
+
         case TokenType::LPAREN: {
             auto expr = parseExpression();
-            if (!match(TokenType::RPAREN)) {
+            if (!match(TokenType::RPAREN))
                 throw std::runtime_error("Expected ')' after expression");
-            }
             return expr;
         }
+
         default:
             throw std::runtime_error("Unexpected token in expression: '" + token.value + "'");
     }
@@ -182,20 +190,24 @@ static std::unique_ptr<Statement> parseStatement() {
             std::move(elseBlock)
         );
     }
-    if (match(TokenType::INT)) {
-        if (match(TokenType::COMEANDDO)) {
-            return parseFunction();
-        }
+    if (match(TokenType::INT) || match(TokenType::BOOL) || match(TokenType::STRING_TYPE)) {
+        TokenType varType = tokens[current - 1].type;
+    
         if (peek().type != TokenType::IDENTIFIER)
-            throw std::runtime_error("Expected identifier after 'int'");
+            throw std::runtime_error("Expected identifier after type");
+    
         std::string name = advance().value;
+    
         if (!match(TokenType::ASSIGN))
             throw std::runtime_error("Expected '=' after variable name");
+    
         auto expr = parseExpression();
+    
         if (!match(TokenType::SEMICOLON))
-            throw std::runtime_error("Expected ';' after expression");
-        return std::make_unique<Assignment>(name, std::move(expr));
-    }
+            throw std::runtime_error("Expected ';' after assignment");
+    
+        return std::make_unique<Assignment>(name, std::move(expr));  // Optionally store varType too
+    }    
     if (match(TokenType::PRINT)) {
         if (!match(TokenType::LPAREN))
             throw std::runtime_error("Expected '(' after print");

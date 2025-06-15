@@ -11,6 +11,11 @@ void execute(const Statement* stmt);
 int evalExpr(const Expr* expr) {
     if (auto num = dynamic_cast<const Number*>(expr)) {
         return num->value;
+    } else if (auto boolLit = dynamic_cast<const BoolLiteral*>(expr)) {
+        return boolLit->value ? 1 : 0;
+    } else if (auto strLit = dynamic_cast<const StringLiteral*>(expr)) {
+        std::cout << strLit->value << std::endl; // Optional direct print
+        return 0;
     } else if (auto var = dynamic_cast<const Variable*>(expr)) {
         if (variables.count(var->name)) return variables[var->name];
         throw std::runtime_error("Undefined variable: " + var->name);
@@ -55,7 +60,7 @@ int evalExpr(const Expr* expr) {
                 returnValue = evalExpr(ret->value.get());
                 break;
             } else {
-                execute(stmt.get());  // ✅ Proper execution of all valid statements
+                execute(stmt.get());
             }
         }
 
@@ -69,13 +74,19 @@ int evalExpr(const Expr* expr) {
 
 void execute(const Statement* stmt) {
     if (auto func = dynamic_cast<const FunctionDef*>(stmt)) {
-        functions[func->name] = func;  // Just store, do not execute
+        functions[func->name] = func;
     } else if (auto assign = dynamic_cast<const Assignment*>(stmt)) {
         int value = evalExpr(assign->value.get());
         variables[assign->name] = value;
     } else if (auto print = dynamic_cast<const Print*>(stmt)) {
-        int value = evalExpr(print->value.get());
-        std::cout << value << std::endl;
+        if (auto strLit = dynamic_cast<const StringLiteral*>(print->value.get())) {
+            std::cout << strLit->value << std::endl;
+        } else if (auto boolLit = dynamic_cast<const BoolLiteral*>(print->value.get())) {
+            std::cout << (boolLit->value ? "true" : "false") << std::endl;
+        } else {
+            int value = evalExpr(print->value.get());
+            std::cout << value << std::endl;
+        }
     } else if (auto ifstmt = dynamic_cast<const IfStatement*>(stmt)) {
         int cond = evalExpr(ifstmt->condition.get());
         const auto& branch = cond ? ifstmt->thenBranch : ifstmt->elseBranch;
@@ -105,6 +116,6 @@ void execute(const Statement* stmt) {
 
 void run(const std::vector<std::unique_ptr<Statement>>& statements) {
     for (const auto& stmt : statements) {
-        execute(stmt.get());  // 🔄 Unified logic here
+        execute(stmt.get());
     }
 }

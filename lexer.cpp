@@ -27,6 +27,10 @@ std::vector<Token> tokenize(const std::string& input) {
             else if (id == "ComeAndDo") tokens.push_back({TokenType::COMEANDDO, id});
             else if (id == "while") tokens.push_back({TokenType::WHILE, id});
             else if (id == "for") tokens.push_back({TokenType::FOR, id});
+            else if (id == "bool") tokens.push_back({TokenType::BOOL, id});
+            else if (id == "string") tokens.push_back({TokenType::STRING_TYPE, id});
+            else if (id == "true" || id == "false") tokens.push_back({TokenType::BOOLEAN_LITERAL, id});
+
             else tokens.push_back({TokenType::IDENTIFIER, id});
         }
         else if (std::isdigit(c)) {
@@ -36,7 +40,27 @@ std::vector<Token> tokenize(const std::string& input) {
             }
             tokens.push_back({TokenType::NUMBER, num});
         }
-        else {
+        else if (c == '"') {
+            std::string str;
+            ++i;  // Skip the opening quote
+            while (i < input.length() && input[i] != '"') {
+                if (input[i] == '\\' && i + 1 < input.length()) {
+                    char next = input[++i];
+                    if (next == 'n') str += '\n';
+                    else if (next == 't') str += '\t';
+                    else str += next;
+                } else {
+                    str += input[i];
+                }
+                ++i;
+            }
+        
+            if (i >= input.length() || input[i] != '"') {
+                throw std::runtime_error("Unterminated string literal");
+            }
+            ++i; // Skip closing quote
+            tokens.push_back({TokenType::STRING_LITERAL, str});
+        } else {
             switch (c) {
                 case '+': tokens.push_back({TokenType::PLUS, "+"}); break;
                 case '-': tokens.push_back({TokenType::MINUS, "-"}); break;

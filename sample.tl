@@ -1,6 +1,6 @@
 ComeAndDo count() {
     for (int i = 0; i < 10; i = i + 1) {
-        print(i);
+        print("hello");
     }
 
 }

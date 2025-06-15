@@ -28,7 +28,11 @@ enum class TokenType {
     NOTEQUALTO,
     END,
     FOR,
-    WHILE
+    WHILE,
+    BOOL,
+    BOOLEAN_LITERAL,
+    STRING_TYPE,
+    STRING_LITERAL
 };
 
 

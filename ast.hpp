@@ -13,6 +13,16 @@ struct Number : Expr {
     Number(int v) : value(v) {}
 };
 
+struct BoolLiteral : Expr {
+    bool value;
+    BoolLiteral(bool v) : value(v) {}
+};
+
+struct StringLiteral : Expr {
+    std::string value;
+    StringLiteral(std::string v) : value(std::move(v)) {}
+};
+
 struct Variable : Expr {
     std::string name;
     Variable(std::string n) : name(n) {}
@@ -79,14 +89,6 @@ struct IfStatement : Statement {
           elseBranch(std::move(elseB)) {}
 };
 
-class ExprStatement : public Statement {
-    public:
-        std::unique_ptr<Expr> expr;
-    
-        ExprStatement(std::unique_ptr<Expr> expr)
-            : expr(std::move(expr)) {}
-};
-    
 struct WhileStatement : Statement {
     std::unique_ptr<Expr> condition;
     std::vector<std::unique_ptr<Statement>> body;
@@ -107,4 +109,12 @@ struct ForStatement : Statement {
                  std::vector<std::unique_ptr<Statement>> body)
         : initializer(std::move(init)), condition(std::move(cond)),
           increment(std::move(incr)), body(std::move(body)) {}
+};
+
+class ExprStatement : public Statement {
+    public:
+        std::unique_ptr<Expr> expr;
+
+        ExprStatement(std::unique_ptr<Expr> expr)
+            : expr(std::move(expr)) {}
 };
