@@ -1,0 +1,39 @@
+{
+    "name": "tinylang",
+    "displayName": "TinyLang",
+    "description": "Syntax highlighting for the TinyLang compiler language",
+    "version": "0.0.1",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ShubhamPipaliya2007/tinylang-compiler.git"
+    },
+    "publisher": "shubhampipaliya",
+    "engines": {
+        "vscode": "^1.70.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "tinylang",
+                "aliases": [
+                    "TinyLang",
+                    "tinylang"
+                ],
+                "extensions": [
+                    ".tl"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "tinylang",
+                "scopeName": "source.tinylang",
+                "path": "./syntaxes/tinylang.tmLanguage.json"
+            }
+        ]
+    }
+}

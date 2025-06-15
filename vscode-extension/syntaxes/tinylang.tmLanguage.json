@@ -1,0 +1,22 @@
+{
+    "scopeName": "source.tinylang",
+    "patterns": [
+        {
+            "name": "keyword.control.tinylang",
+            "match": "\\b(if|else|return|print|int|ComeAndDo)\\b"
+        },
+        {
+            "name": "constant.numeric.tinylang",
+            "match": "\\b\\d+\\b"
+        },
+        {
+            "name": "entity.name.function.tinylang",
+            "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*\\()"
+        }
+    ],
+    "fileTypes": [
+        "tl"
+    ],
+    "foldingStartMarker": "\\{",
+    "foldingStopMarker": "\\}"
+}
