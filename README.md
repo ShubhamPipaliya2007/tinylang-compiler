@@ -1,32 +1,38 @@
 # TinyLang Compiler
 
-**TinyLang** is a lightweight toy compiler written in modern C++17 for a custom language with minimal syntax. This language includes variable declarations, function definitions (with the custom keyword `ComeAndDo`), conditionals, and simple expressions.
+**TinyLang** is a simple toy language compiler and interpreter written in C++17. It was built from scratch to understand core compiler concepts, such as lexical analysis, parsing, AST construction, and execution. TinyLang supports:
+
+### ✅ Features
+
+- Variable declarations: `int x = 5;`
+- Arithmetic expressions: `+`, `-`, `*`, `/`
+- Logical operators: `==`, `!=`, `<`, `>`
+- `print()` for console output
+- Conditional statements: `if`, `else`
+- `while` loops
+- `for` loops
+- Function definitions using the `ComeAndDo` keyword
+- Function calls
+- Return statements
+- Expression statements
+- VS Code extension for `.tl` syntax highlighting
+- Published on the Visual Studio Marketplace
 
 ---
 
-## 🚀 Features
+### 🛠 Setup
 
-- ✅ Lexical analysis (tokenizer)
-- ✅ Recursive descent parser
-- ✅ AST (Abstract Syntax Tree) generation
-- ✅ Function definitions using `ComeAndDo`
-- ✅ Conditionals: `if`, `else`
-- ✅ Arithmetic operations: `+`, `-`, `*`, `/`
-- ✅ Comparison operators: `==`, `!=`, `<`, `>`
-- ✅ Function calls and return statements
-- ✅ Printing output via `print()`
+#### 🔧 Requirements
 
----
+- C++17 compiler (tested on `g++`)
+- `make` (optional, for easier compilation)
+- VS Code (for extension usage)
 
-## 📜 Example Code (in `sample.tl`)
+#### 🔁 Build
 
-```tl
-ComeAndDo check(x) {
-    if (x > 0) {
-        print(1);
-    } else {
-        print(0);
-    }
-}
+make
 
-check(5);
+
+or manually 
+
+g++ -std=c++17 -Wall -o tinylang.exe main.cpp lexer.cpp parser.cpp codegen.cpp

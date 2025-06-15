@@ -32,7 +32,6 @@ enum class TokenType {
 };
 
 
-
 struct Token {
     TokenType type;
     std::string value;
