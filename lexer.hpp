@@ -26,7 +26,8 @@ enum class TokenType {
     LESSTHEN,
     EQUALTO,
     NOTEQUALTO,
-    END
+    END,
+    WHILE
 };
 
 

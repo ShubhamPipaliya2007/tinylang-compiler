@@ -114,6 +114,22 @@ static std::unique_ptr<Statement> parseStatement() {
         return parseFunction();
     }
 
+    //While Loop Declaration
+    if (match(TokenType::WHILE)) {
+        if (!match(TokenType::LPAREN)) throw std::runtime_error("Expected '(' after while");
+        auto condition = parseExpression();
+        if (!match(TokenType::RPAREN)) throw std::runtime_error("Expected ')' after while condition");
+        if (!match(TokenType::LBRACE)) throw std::runtime_error("Expected '{' after while");
+    
+        std::vector<std::unique_ptr<Statement>> body;
+        while (!check(TokenType::RBRACE)) {
+            body.push_back(parseStatement());
+        }
+        match(TokenType::RBRACE);
+    
+        return std::make_unique<WhileStatement>(std::move(condition), std::move(body));
+    }    
+
     // If statement
     if (match(TokenType::IF)) {
         if (!match(TokenType::LPAREN)) throw std::runtime_error("Expected '(' after 'if'");
@@ -179,6 +195,15 @@ static std::unique_ptr<Statement> parseStatement() {
         if (!match(TokenType::SEMICOLON))
             throw std::runtime_error("Expected ';' after return");
         return std::make_unique<Return>(std::move(expr));
+    }
+    // Reassignment like x = x + 1;
+    if (peek().type == TokenType::IDENTIFIER && tokens[current + 1].type == TokenType::ASSIGN) {
+        std::string name = advance().value; // identifier
+        match(TokenType::ASSIGN);           // consume '='
+        auto expr = parseExpression();
+        if (!match(TokenType::SEMICOLON))
+            throw std::runtime_error("Expected ';' after assignment");
+        return std::make_unique<Assignment>(name, std::move(expr));
     }
 
     // Expression statement

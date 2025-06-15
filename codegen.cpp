@@ -83,7 +83,13 @@ void execute(const Statement* stmt) {
             execute(subStmt.get());
         }
     } else if (auto exprStmt = dynamic_cast<const ExprStatement*>(stmt)) {
-        evalExpr(exprStmt->expr.get());  // Handles things like `check(5);`
+        evalExpr(exprStmt->expr.get());
+    } else if (auto whilestmt = dynamic_cast<const WhileStatement*>(stmt)) {
+        while (evalExpr(whilestmt->condition.get())) {
+            for (const auto& s : whilestmt->body) {
+                execute(s.get());
+            }
+        }
     } else {
         throw std::runtime_error("Unsupported statement");
     }

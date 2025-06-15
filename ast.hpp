@@ -87,5 +87,10 @@ class ExprStatement : public Statement {
             : expr(std::move(expr)) {}
 };
     
+struct WhileStatement : Statement {
+    std::unique_ptr<Expr> condition;
+    std::vector<std::unique_ptr<Statement>> body;
 
-
+    WhileStatement(std::unique_ptr<Expr> cond, std::vector<std::unique_ptr<Statement>> body)
+        : condition(std::move(cond)), body(std::move(body)) {}
+};
