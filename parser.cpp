@@ -57,7 +57,19 @@ static std::unique_ptr<Expr> parsePrimary() {
             }
             return std::make_unique<Variable>(name);
         }
-
+        case TokenType::INPUT:{
+            if (!match(TokenType::LPAREN) || !match(TokenType::RPAREN))
+                throw std::runtime_error("Expected 'input()'");
+            return std::make_unique<InputExpr>();
+        }
+        case TokenType::READ:{
+            if (!match(TokenType::LPAREN)) throw std::runtime_error("Expected '(' after 'read'");
+            if (peek().type != TokenType::STRING_LITERAL)
+                throw std::runtime_error("Expected string literal in read()");
+            std::string filename = advance().value;
+            if (!match(TokenType::RPAREN)) throw std::runtime_error("Expected ')' after read argument");
+            return std::make_unique<ReadExpr>(filename);
+        }
         case TokenType::LPAREN: {
             auto expr = parseExpression();
             if (!match(TokenType::RPAREN))
@@ -190,6 +202,40 @@ static std::unique_ptr<Statement> parseStatement() {
             std::move(elseBlock)
         );
     }
+    // Bool declaration
+    if (match(TokenType::BOOL)) {
+        if (peek().type != TokenType::IDENTIFIER)
+            throw std::runtime_error("Expected identifier after 'bool'");
+        std::string name = advance().value;
+
+        if (!match(TokenType::ASSIGN))
+            throw std::runtime_error("Expected '=' after variable name");
+
+        auto expr = parseExpression();
+
+        if (!match(TokenType::SEMICOLON))
+            throw std::runtime_error("Expected ';' after expression");
+
+        return std::make_unique<Assignment>(name, std::move(expr));
+    }
+
+    // String declaration
+    if (match(TokenType::STRING_TYPE)) {
+        if (peek().type != TokenType::IDENTIFIER)
+            throw std::runtime_error("Expected identifier after 'string'");
+        std::string name = advance().value;
+
+        if (!match(TokenType::ASSIGN))
+            throw std::runtime_error("Expected '=' after variable name");
+
+        auto expr = parseExpression();
+
+        if (!match(TokenType::SEMICOLON))
+            throw std::runtime_error("Expected ';' after expression");
+
+        return std::make_unique<Assignment>(name, std::move(expr));
+    }
+
     if (match(TokenType::INT) || match(TokenType::BOOL) || match(TokenType::STRING_TYPE)) {
         TokenType varType = tokens[current - 1].type;
     

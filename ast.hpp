@@ -37,6 +37,17 @@ struct BinaryExpr : Expr {
         : left(std::move(l)), right(std::move(r)), op(o) {}
 };
 
+// ➕ NEW: input()
+struct InputExpr : Expr {
+    InputExpr() = default;
+};
+
+// ➕ NEW: read("filename")
+struct ReadExpr : Expr {
+    std::string filename;
+    ReadExpr(std::string f) : filename(std::move(f)) {}
+};
+
 struct Statement {
     virtual ~Statement() = default;
 };
@@ -118,3 +129,4 @@ class ExprStatement : public Statement {
         ExprStatement(std::unique_ptr<Expr> expr)
             : expr(std::move(expr)) {}
 };
+

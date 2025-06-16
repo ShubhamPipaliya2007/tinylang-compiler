@@ -32,7 +32,9 @@ enum class TokenType {
     BOOL,
     BOOLEAN_LITERAL,
     STRING_TYPE,
-    STRING_LITERAL
+    STRING_LITERAL,
+    INPUT,
+    READ
 };
 
 
