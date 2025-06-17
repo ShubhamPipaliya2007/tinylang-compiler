@@ -39,10 +39,12 @@ static std::unique_ptr<Expr> parsePrimary() {
     switch (token.type) {
         case TokenType::NUMBER:
             return std::make_unique<Number>(std::stoi(token.value));
-
+        case TokenType::FLOAT_LITERAL:
+            return std::make_unique<FloatLiteral>(std::stod(token.value));
+        case TokenType::CHAR_LITERAL:
+            return std::make_unique<CharLiteral>(token.value[0]);
         case TokenType::BOOLEAN_LITERAL:
             return std::make_unique<BoolLiteral>(token.value == "true");
-
         case TokenType::STRING_LITERAL:
             return std::make_unique<StringLiteral>(token.value);  // ensure lexer stores the string literal correctly
 
@@ -119,9 +121,10 @@ static std::unique_ptr<Expr> parseExpression() {
 }
 
 static std::unique_ptr<Statement> parseSimpleAssignment() {
-    if (match(TokenType::INT)) {
+    if (match(TokenType::INT) || match(TokenType::FLOAT) || match(TokenType::CHAR)) {
+        TokenType varType = tokens[current - 1].type;
         if (peek().type != TokenType::IDENTIFIER)
-            throw std::runtime_error(errorMsg("Expected identifier after 'int'", peek()));
+            throw std::runtime_error(errorMsg("Expected identifier after type", peek()));
         std::string name = advance().value;
         if (!match(TokenType::ASSIGN))
             throw std::runtime_error(errorMsg("Expected '=' after variable name", peek()));
@@ -241,24 +244,31 @@ static std::unique_ptr<Statement> parseStatement() {
         return std::make_unique<Assignment>(name, std::move(expr));
     }
 
-    if (match(TokenType::INT) || match(TokenType::BOOL) || match(TokenType::STRING_TYPE)) {
-        TokenType varType = tokens[current - 1].type;
-    
+    // Float declaration
+    if (match(TokenType::FLOAT)) {
         if (peek().type != TokenType::IDENTIFIER)
-            throw std::runtime_error(errorMsg("Expected identifier after type", peek()));
-    
+            throw std::runtime_error(errorMsg("Expected identifier after 'float'", peek()));
         std::string name = advance().value;
-    
         if (!match(TokenType::ASSIGN))
             throw std::runtime_error(errorMsg("Expected '=' after variable name", peek()));
-    
         auto expr = parseExpression();
-    
         if (!match(TokenType::SEMICOLON))
-            throw std::runtime_error(errorMsg("Expected ';' after assignment", peek()));
-    
-        return std::make_unique<Assignment>(name, std::move(expr));  // Optionally store varType too
-    }    
+            throw std::runtime_error(errorMsg("Expected ';' after expression", peek()));
+        return std::make_unique<Assignment>(name, std::move(expr));
+    }
+    // Char declaration
+    if (match(TokenType::CHAR)) {
+        if (peek().type != TokenType::IDENTIFIER)
+            throw std::runtime_error(errorMsg("Expected identifier after 'char'", peek()));
+        std::string name = advance().value;
+        if (!match(TokenType::ASSIGN))
+            throw std::runtime_error(errorMsg("Expected '=' after variable name", peek()));
+        auto expr = parseExpression();
+        if (!match(TokenType::SEMICOLON))
+            throw std::runtime_error(errorMsg("Expected ';' after expression", peek()));
+        return std::make_unique<Assignment>(name, std::move(expr));
+    }
+
     if (match(TokenType::PRINT)) {
         if (!match(TokenType::LPAREN))
             throw std::runtime_error(errorMsg("Expected '(' after print", peek()));

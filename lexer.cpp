@@ -38,6 +38,8 @@ std::vector<Token> tokenize(const std::string& input) {
             else if (id == "return") type = TokenType::RETURN;
             else if (id == "print") type = TokenType::PRINT;
             else if (id == "int") type = TokenType::INT;
+            else if (id == "float") type = TokenType::FLOAT;
+            else if (id == "char") type = TokenType::CHAR;
             else if (id == "ComeAndDo") type = TokenType::COMEANDDO;
             else if (id == "while") type = TokenType::WHILE;
             else if (id == "for") type = TokenType::FOR;
@@ -51,11 +53,25 @@ std::vector<Token> tokenize(const std::string& input) {
         }
         else if (std::isdigit(c)) {
             std::string num;
+            bool is_float = false;
             while (i < input.length() && std::isdigit(input[i])) {
                 num += input[i++];
                 col++;
             }
-            tokens.push_back({TokenType::NUMBER, num, token_line, token_col});
+            if (i < input.length() && input[i] == '.') {
+                is_float = true;
+                num += input[i++];
+                col++;
+                while (i < input.length() && std::isdigit(input[i])) {
+                    num += input[i++];
+                    col++;
+                }
+            }
+            if (is_float) {
+                tokens.push_back({TokenType::FLOAT_LITERAL, num, token_line, token_col});
+            } else {
+                tokens.push_back({TokenType::NUMBER, num, token_line, token_col});
+            }
         }
         else if (c == '"') {
             i++; col++;
@@ -75,7 +91,18 @@ std::vector<Token> tokenize(const std::string& input) {
             }
             i++; col++;
             tokens.push_back({TokenType::STRING_LITERAL, str, token_line, token_col});
-        } else {
+        }
+        else if (c == '\'') {
+            i++; col++;
+            if (i < input.length() && input[i + 1] == '\'') {
+                std::string ch(1, input[i]);
+                tokens.push_back({TokenType::CHAR_LITERAL, ch, token_line, token_col});
+                i += 2; col += 2;
+            } else {
+                throw std::runtime_error("Unterminated or invalid char literal at line " + std::to_string(token_line) + ", column " + std::to_string(token_col));
+            }
+        }
+        else {
             TokenType type;
             std::string val;
             bool valid = true;

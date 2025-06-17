@@ -34,7 +34,11 @@ enum class TokenType {
     STRING_TYPE,
     STRING_LITERAL,
     INPUT,
-    READ
+    READ,
+    FLOAT,           // float keyword
+    CHAR,            // char keyword
+    FLOAT_LITERAL,   // float literal
+    CHAR_LITERAL     // char literal
 };
 
 

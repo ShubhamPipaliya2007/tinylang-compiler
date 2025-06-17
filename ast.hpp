@@ -130,3 +130,13 @@ class ExprStatement : public Statement {
             : expr(std::move(expr)) {}
 };
 
+struct FloatLiteral : Expr {
+    double value;
+    FloatLiteral(double v) : value(v) {}
+};
+
+struct CharLiteral : Expr {
+    char value;
+    CharLiteral(char v) : value(v) {}
+};
+
