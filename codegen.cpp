@@ -2,10 +2,17 @@
 #include <iostream>
 #include <unordered_map>
 #include <fstream>
+#include <vector>
+#include <string>
 
 static std::unordered_map<std::string, int> variables;
 static std::unordered_map<std::string, double> float_variables;
 static std::unordered_map<std::string, char> char_variables;
+static std::unordered_map<std::string, std::vector<int>> int_arrays;
+static std::unordered_map<std::string, std::vector<double>> float_arrays;
+static std::unordered_map<std::string, std::vector<char>> char_arrays;
+static std::unordered_map<std::string, std::vector<bool>> bool_arrays;
+static std::unordered_map<std::string, std::vector<std::string>> string_arrays;
 static std::unordered_map<std::string, const FunctionDef*> functions;
 
 // Forward declaration
@@ -134,6 +141,20 @@ Value evalExpr(const Expr* expr) {
         char_variables = backupc;
         return Value(returnValue);
     }
+    else if (auto arrAccess = dynamic_cast<const ArrayAccess*>(expr)) {
+        const std::string& name = arrAccess->arrayName;
+        int idx = evalExpr(arrAccess->index.get()).i;
+        if (int_arrays.count(name)) return Value(int_arrays[name].at(idx));
+        if (float_arrays.count(name)) return Value(float_arrays[name].at(idx));
+        if (char_arrays.count(name)) return Value(char_arrays[name].at(idx));
+        if (bool_arrays.count(name)) return Value(bool_arrays[name].at(idx));
+        if (string_arrays.count(name)) throw std::runtime_error("Cannot use string array element as int/float/char");
+        throw std::runtime_error("Undefined array: " + name);
+    }
+    else if (auto arrLit = dynamic_cast<const ArrayLiteral*>(expr)) {
+        // Only used for initialization, handled in execute
+        throw std::runtime_error("ArrayLiteral should not be evaluated directly");
+    }
 
     throw std::runtime_error("Unknown expression");
 }
@@ -143,14 +164,61 @@ void execute(const Statement* stmt) {
         functions[func->name] = func;
     } 
     else if (auto assign = dynamic_cast<const Assignment*>(stmt)) {
-        Value value = evalExpr(assign->value.get());
-        // Assign to correct variable map
-        if (dynamic_cast<const FloatLiteral*>(assign->value.get()) || value.type == ValueType::FLOAT) {
-            float_variables[assign->name] = (value.type == ValueType::FLOAT) ? value.f : value.i;
-        } else if (dynamic_cast<const CharLiteral*>(assign->value.get()) || value.type == ValueType::CHAR) {
-            char_variables[assign->name] = (value.type == ValueType::CHAR) ? value.c : value.i;
-        } else {
-            variables[assign->name] = (value.type == ValueType::INT) ? value.i : (value.type == ValueType::FLOAT ? (int)value.f : value.c);
+        // Fixed-size array declaration: e.g., float nums[3];
+        if (!assign->type.empty() && assign->value && dynamic_cast<const Number*>(assign->value.get())) {
+            int size = evalExpr(assign->value.get()).i;
+            if (assign->type == "float") {
+                float_arrays[assign->name] = std::vector<double>(size, 0.0);
+            } else if (assign->type == "int") {
+                int_arrays[assign->name] = std::vector<int>(size, 0);
+            } else if (assign->type == "char") {
+                char_arrays[assign->name] = std::vector<char>(size, '\0');
+            } else if (assign->type == "bool") {
+                bool_arrays[assign->name] = std::vector<bool>(size, false);
+            } else if (assign->type == "string") {
+                string_arrays[assign->name] = std::vector<std::string>(size, "");
+            } else {
+                int_arrays[assign->name] = std::vector<int>(size, 0);
+            }
+        }
+        // Array declaration/initialization
+        else if (auto arrLit = dynamic_cast<const ArrayLiteral*>(assign->value.get())) {
+            // Try to infer type from first element
+            if (arrLit->elements.empty()) {
+                int_arrays[assign->name] = {};
+            } else if (dynamic_cast<const Number*>(arrLit->elements[0].get())) {
+                std::vector<int> vals;
+                for (const auto& e : arrLit->elements) vals.push_back(evalExpr(e.get()).i);
+                int_arrays[assign->name] = vals;
+            } else if (dynamic_cast<const FloatLiteral*>(arrLit->elements[0].get())) {
+                std::vector<double> vals;
+                for (const auto& e : arrLit->elements) vals.push_back(evalExpr(e.get()).f);
+                float_arrays[assign->name] = vals;
+            } else if (dynamic_cast<const CharLiteral*>(arrLit->elements[0].get())) {
+                std::vector<char> vals;
+                for (const auto& e : arrLit->elements) vals.push_back(evalExpr(e.get()).c);
+                char_arrays[assign->name] = vals;
+            } else if (dynamic_cast<const BoolLiteral*>(arrLit->elements[0].get())) {
+                std::vector<bool> vals;
+                for (const auto& e : arrLit->elements) vals.push_back(evalExpr(e.get()).i != 0);
+                bool_arrays[assign->name] = vals;
+            } else if (dynamic_cast<const StringLiteral*>(arrLit->elements[0].get())) {
+                std::vector<std::string> vals;
+                for (const auto& e : arrLit->elements) vals.push_back(dynamic_cast<const StringLiteral*>(e.get())->value);
+                string_arrays[assign->name] = vals;
+            } else {
+                throw std::runtime_error("Unsupported array literal type");
+            }
+        } else if (assign->value && dynamic_cast<const FloatLiteral*>(assign->value.get())) {
+            float_variables[assign->name] = evalExpr(assign->value.get()).f;
+        } else if (assign->value && dynamic_cast<const CharLiteral*>(assign->value.get())) {
+            char_variables[assign->name] = evalExpr(assign->value.get()).c;
+        } else if (assign->value && dynamic_cast<const BoolLiteral*>(assign->value.get())) {
+            variables[assign->name] = evalExpr(assign->value.get()).i;
+        } else if (assign->value && dynamic_cast<const StringLiteral*>(assign->value.get())) {
+            // Not implemented: string variables
+        } else if (assign->value) {
+            variables[assign->name] = evalExpr(assign->value.get()).i;
         }
     } 
     else if (auto print = dynamic_cast<const Print*>(stmt)) {
@@ -167,6 +235,15 @@ void execute(const Statement* stmt) {
             else if (float_variables.count(var->name)) std::cout << float_variables[var->name] << std::endl;
             else if (char_variables.count(var->name)) std::cout << char_variables[var->name] << std::endl;
             else throw std::runtime_error("Undefined variable: " + var->name);
+        } else if (auto arrAccess = dynamic_cast<const ArrayAccess*>(print->value.get())) {
+            const std::string& name = arrAccess->arrayName;
+            int idx = evalExpr(arrAccess->index.get()).i;
+            if (int_arrays.count(name)) std::cout << int_arrays[name].at(idx) << std::endl;
+            else if (float_arrays.count(name)) std::cout << float_arrays[name].at(idx) << std::endl;
+            else if (char_arrays.count(name)) std::cout << char_arrays[name].at(idx) << std::endl;
+            else if (bool_arrays.count(name)) std::cout << (bool_arrays[name].at(idx) ? "true" : "false") << std::endl;
+            else if (string_arrays.count(name)) std::cout << string_arrays[name].at(idx) << std::endl;
+            else throw std::runtime_error("Undefined array: " + name);
         } else {
             Value value = evalExpr(print->value.get());
             if (value.type == ValueType::FLOAT) std::cout << value.f << std::endl;
@@ -200,6 +277,16 @@ void execute(const Statement* stmt) {
             if (forstmt->increment) execute(forstmt->increment.get());
         }
     } 
+    else if (auto arrAssign = dynamic_cast<const ArrayAssignment*>(stmt)) {
+        const std::string& name = arrAssign->arrayName;
+        int idx = evalExpr(arrAssign->index.get()).i;
+        Value value = evalExpr(arrAssign->value.get());
+        if (int_arrays.count(name)) int_arrays[name].at(idx) = value.i;
+        else if (float_arrays.count(name)) float_arrays[name].at(idx) = (value.type == ValueType::FLOAT ? value.f : value.i);
+        else if (char_arrays.count(name)) char_arrays[name].at(idx) = (value.type == ValueType::CHAR ? value.c : value.i);
+        else if (bool_arrays.count(name)) bool_arrays[name].at(idx) = (value.i != 0);
+        else throw std::runtime_error("Undefined array: " + name);
+    }
     else {
         throw std::runtime_error("Unsupported statement");
     }

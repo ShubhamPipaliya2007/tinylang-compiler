@@ -33,6 +33,18 @@ static bool match(TokenType type) {
     return false;
 }
 
+static std::unique_ptr<Expr> parseArrayLiteral() {
+    std::vector<std::unique_ptr<Expr>> elements;
+    if (!match(TokenType::RBRACE)) {
+        do {
+            elements.push_back(parseExpression());
+        } while (match(TokenType::COMMA));
+        if (!match(TokenType::RBRACE))
+            throw std::runtime_error(errorMsg("Expected '}' after array literal", peek()));
+    }
+    return std::make_unique<ArrayLiteral>(std::move(elements));
+}
+
 static std::unique_ptr<Expr> parsePrimary() {
     Token token = advance();
 
@@ -62,8 +74,17 @@ static std::unique_ptr<Expr> parsePrimary() {
                 }
                 return std::make_unique<CallExpr>(name, std::move(args));
             }
+            // Array access: arr[expr]
+            if (match(TokenType::LBRACKET)) {
+                auto index = parseExpression();
+                if (!match(TokenType::RBRACKET))
+                    throw std::runtime_error(errorMsg("Expected ']' after array index", peek()));
+                return std::make_unique<ArrayAccess>(name, std::move(index));
+            }
             return std::make_unique<Variable>(name);
         }
+        case TokenType::LBRACE: // Array literal
+            return parseArrayLiteral();
         case TokenType::INPUT:{
             if (!match(TokenType::LPAREN) || !match(TokenType::RPAREN))
                 throw std::runtime_error(errorMsg("Expected 'input()'", peek()));
@@ -210,65 +231,74 @@ static std::unique_ptr<Statement> parseStatement() {
             std::move(elseBlock)
         );
     }
-    // Bool declaration
-    if (match(TokenType::BOOL)) {
+    if (match(TokenType::INT) || match(TokenType::FLOAT) || match(TokenType::CHAR) || match(TokenType::BOOL) || match(TokenType::STRING_TYPE)) {
+        TokenType varType = tokens[current - 1].type;
+        std::string typeStr;
+        switch (varType) {
+            case TokenType::INT: typeStr = "int"; break;
+            case TokenType::FLOAT: typeStr = "float"; break;
+            case TokenType::CHAR: typeStr = "char"; break;
+            case TokenType::BOOL: typeStr = "bool"; break;
+            case TokenType::STRING_TYPE: typeStr = "string"; break;
+            default: typeStr = "int"; break;
+        }
         if (peek().type != TokenType::IDENTIFIER)
-            throw std::runtime_error(errorMsg("Expected identifier after 'bool'", peek()));
+            throw std::runtime_error(errorMsg("Expected identifier after type", peek()));
         std::string name = advance().value;
-
-        if (!match(TokenType::ASSIGN))
-            throw std::runtime_error(errorMsg("Expected '=' after variable name", peek()));
-
-        auto expr = parseExpression();
-
+        // Array declaration
+        if (match(TokenType::LBRACKET)) {
+            if (peek().type == TokenType::RBRACKET) { // int arr[]
+                advance();
+                if (match(TokenType::ASSIGN)) {
+                    if (!match(TokenType::LBRACE))
+                        throw std::runtime_error(errorMsg("Expected '{' for array initializer", peek()));
+                    auto arrLit = parseArrayLiteral();
+                    if (!match(TokenType::SEMICOLON))
+                        throw std::runtime_error(errorMsg("Expected ';' after array declaration", peek()));
+                    // Assignment node for array initialization
+                    return std::make_unique<Assignment>(name, std::move(arrLit), typeStr);
+                } else {
+                    if (!match(TokenType::SEMICOLON))
+                        throw std::runtime_error(errorMsg("Expected ';' after array declaration", peek()));
+                    // Empty array declaration (size unknown)
+                    return std::make_unique<Assignment>(name, nullptr, typeStr);
+                }
+            } else { // int arr[10]
+                auto sizeExpr = parseExpression();
+                if (!match(TokenType::RBRACKET))
+                    throw std::runtime_error(errorMsg("Expected ']' after array size", peek()));
+                if (!match(TokenType::SEMICOLON))
+                    throw std::runtime_error(errorMsg("Expected ';' after array declaration", peek()));
+                // Assignment node for fixed-size array (sizeExpr as value)
+                return std::make_unique<Assignment>(name, std::move(sizeExpr), typeStr);
+            }
+        }
+        // Normal variable assignment
+        if (match(TokenType::ASSIGN)) {
+            auto expr = parseExpression();
+            if (!match(TokenType::SEMICOLON))
+                throw std::runtime_error(errorMsg("Expected ';' after assignment", peek()));
+            return std::make_unique<Assignment>(name, std::move(expr), typeStr);
+        }
         if (!match(TokenType::SEMICOLON))
-            throw std::runtime_error(errorMsg("Expected ';' after expression", peek()));
-
-        return std::make_unique<Assignment>(name, std::move(expr));
+            throw std::runtime_error(errorMsg("Expected ';' after declaration", peek()));
+        return std::make_unique<Assignment>(name, nullptr, typeStr);
     }
-
-    // String declaration
-    if (match(TokenType::STRING_TYPE)) {
-        if (peek().type != TokenType::IDENTIFIER)
-            throw std::runtime_error(errorMsg("Expected identifier after 'string'", peek()));
+    // Array assignment: arr[expr] = expr;
+    if (peek().type == TokenType::IDENTIFIER && tokens[current + 1].type == TokenType::LBRACKET) {
         std::string name = advance().value;
-
+        match(TokenType::LBRACKET);
+        auto index = parseExpression();
+        if (!match(TokenType::RBRACKET))
+            throw std::runtime_error(errorMsg("Expected ']' after array index", peek()));
         if (!match(TokenType::ASSIGN))
-            throw std::runtime_error(errorMsg("Expected '=' after variable name", peek()));
-
-        auto expr = parseExpression();
-
+            throw std::runtime_error(errorMsg("Expected '=' after array index", peek()));
+        auto value = parseExpression();
         if (!match(TokenType::SEMICOLON))
-            throw std::runtime_error(errorMsg("Expected ';' after expression", peek()));
-
-        return std::make_unique<Assignment>(name, std::move(expr));
+            throw std::runtime_error(errorMsg("Expected ';' after array assignment", peek()));
+        return std::make_unique<ArrayAssignment>(name, std::move(index), std::move(value));
     }
-
-    // Float declaration
-    if (match(TokenType::FLOAT)) {
-        if (peek().type != TokenType::IDENTIFIER)
-            throw std::runtime_error(errorMsg("Expected identifier after 'float'", peek()));
-        std::string name = advance().value;
-        if (!match(TokenType::ASSIGN))
-            throw std::runtime_error(errorMsg("Expected '=' after variable name", peek()));
-        auto expr = parseExpression();
-        if (!match(TokenType::SEMICOLON))
-            throw std::runtime_error(errorMsg("Expected ';' after expression", peek()));
-        return std::make_unique<Assignment>(name, std::move(expr));
-    }
-    // Char declaration
-    if (match(TokenType::CHAR)) {
-        if (peek().type != TokenType::IDENTIFIER)
-            throw std::runtime_error(errorMsg("Expected identifier after 'char'", peek()));
-        std::string name = advance().value;
-        if (!match(TokenType::ASSIGN))
-            throw std::runtime_error(errorMsg("Expected '=' after variable name", peek()));
-        auto expr = parseExpression();
-        if (!match(TokenType::SEMICOLON))
-            throw std::runtime_error(errorMsg("Expected ';' after expression", peek()));
-        return std::make_unique<Assignment>(name, std::move(expr));
-    }
-
+    // Print statement (must be before fallback to expression)
     if (match(TokenType::PRINT)) {
         if (!match(TokenType::LPAREN))
             throw std::runtime_error(errorMsg("Expected '(' after print", peek()));
@@ -280,19 +310,16 @@ static std::unique_ptr<Statement> parseStatement() {
         return std::make_unique<Print>(std::move(expr));
     }
     if (match(TokenType::RETURN)) {
+        if (peek().type == TokenType::SEMICOLON) {
+            match(TokenType::SEMICOLON);
+            return std::make_unique<Return>(nullptr);
+        }
         auto expr = parseExpression();
         if (!match(TokenType::SEMICOLON))
             throw std::runtime_error(errorMsg("Expected ';' after return", peek()));
         return std::make_unique<Return>(std::move(expr));
     }
-    if (peek().type == TokenType::IDENTIFIER && tokens[current + 1].type == TokenType::ASSIGN) {
-        std::string name = advance().value;
-        match(TokenType::ASSIGN);
-        auto expr = parseExpression();
-        if (!match(TokenType::SEMICOLON))
-            throw std::runtime_error(errorMsg("Expected ';' after assignment", peek()));
-        return std::make_unique<Assignment>(name, std::move(expr));
-    }
+    // Fallback: expression statement
     auto expr = parseExpression();
     if (!match(TokenType::SEMICOLON))
         throw std::runtime_error(errorMsg("Expected ';' after expression", peek()));

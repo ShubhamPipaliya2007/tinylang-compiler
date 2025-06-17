@@ -116,6 +116,8 @@ std::vector<Token> tokenize(const std::string& input) {
                 case ')': type = TokenType::RPAREN; val = ")"; break;
                 case '{': type = TokenType::LBRACE; val = "{"; break;
                 case '}': type = TokenType::RBRACE; val = "}"; break;
+                case '[': type = TokenType::LBRACKET; val = "["; break;
+                case ']': type = TokenType::RBRACKET; val = "]"; break;
                 case ',': type = TokenType::COMMA; val = ","; break;
                 case '>': type = TokenType::GREATERTHEN; val = ">"; break;
                 case '<': type = TokenType::LESSTHEN; val = "<"; break;

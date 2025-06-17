@@ -15,8 +15,10 @@ enum class TokenType {
     PRINT,
     LPAREN,
     RPAREN,
-    LBRACE,
-    RBRACE,
+    LBRACE,    // {
+    RBRACE,    // }
+    LBRACKET,  // [
+    RBRACKET,  // ]
     COMMA,
     RETURN,
     COMEANDDO,

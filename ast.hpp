@@ -55,8 +55,9 @@ struct Statement {
 struct Assignment : Statement {
     std::string name;
     std::unique_ptr<Expr> value;
-    Assignment(std::string n, std::unique_ptr<Expr> v)
-        : name(n), value(std::move(v)) {}
+    std::string type;
+    Assignment(std::string n, std::unique_ptr<Expr> v, std::string t = "")
+        : name(std::move(n)), value(std::move(v)), type(std::move(t)) {}
 };
 
 struct Print : Statement {
@@ -138,5 +139,24 @@ struct FloatLiteral : Expr {
 struct CharLiteral : Expr {
     char value;
     CharLiteral(char v) : value(v) {}
+};
+
+struct ArrayLiteral : Expr {
+    std::vector<std::unique_ptr<Expr>> elements;
+    ArrayLiteral(std::vector<std::unique_ptr<Expr>> elems) : elements(std::move(elems)) {}
+};
+
+struct ArrayAccess : Expr {
+    std::string arrayName;
+    std::unique_ptr<Expr> index;
+    ArrayAccess(std::string name, std::unique_ptr<Expr> idx) : arrayName(std::move(name)), index(std::move(idx)) {}
+};
+
+struct ArrayAssignment : Statement {
+    std::string arrayName;
+    std::unique_ptr<Expr> index;
+    std::unique_ptr<Expr> value;
+    ArrayAssignment(std::string name, std::unique_ptr<Expr> idx, std::unique_ptr<Expr> val)
+        : arrayName(std::move(name)), index(std::move(idx)), value(std::move(val)) {}
 };
 

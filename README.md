@@ -19,6 +19,7 @@
 - Published on the Visual Studio Marketplace
 - Data Types: int, bool, String, char, float
 - Funtion for input
+- Array implemented
 
 ### 🛠 Setup
 
