@@ -41,6 +41,8 @@ enum class TokenType {
 struct Token {
     TokenType type;
     std::string value;
+    int line;   // Line number (1-based)
+    int column; // Column number (1-based)
 };
 
 std::vector<Token> tokenize(const std::string& input);

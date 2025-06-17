@@ -1,2 +1,2 @@
-int x = input();
+int x = input()
 print(x);
