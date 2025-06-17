@@ -1,0 +1,54 @@
+{
+    "Function": {
+        "prefix": "func",
+        "body": [
+            "ComeAndDo ${1:functionName}(${2:params}) {",
+            "    $0",
+            "}"
+        ],
+        "description": "TinyLang function definition"
+    },
+    "For Loop": {
+        "prefix": "for",
+        "body": [
+            "for (int ${1:i} = 0; ${1:i} < ${2:N}; ${1:i} = ${1:i} + 1) {",
+            "    $0",
+            "}"
+        ],
+        "description": "TinyLang for loop"
+    },
+    "While Loop": {
+        "prefix": "while",
+        "body": [
+            "while (${1:condition}) {",
+            "    $0",
+            "}"
+        ],
+        "description": "TinyLang while loop"
+    },
+    "If-Else": {
+        "prefix": "if",
+        "body": [
+            "if (${1:condition}) {",
+            "    $2",
+            "} else {",
+            "    $0",
+            "}"
+        ],
+        "description": "TinyLang if-else statement"
+    },
+    "Array Declaration": {
+        "prefix": "array",
+        "body": [
+            "${1:int} ${2:arr}[${3:N}];"
+        ],
+        "description": "TinyLang array declaration"
+    },
+    "Print Statement": {
+        "prefix": "print",
+        "body": [
+            "print(${1:expr});"
+        ],
+        "description": "TinyLang print statement"
+    }
+} 

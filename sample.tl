@@ -17,3 +17,10 @@ print(flags[1]);
 
 string words[] = {"hello", "world"};
 print(words[0]);
+
+
+
+
+
+
+

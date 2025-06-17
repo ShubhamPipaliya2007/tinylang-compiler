@@ -4,7 +4,7 @@
 
 ### ✅ Features
 
-- Variable declarations: `int x = 5;`
+- Variable declarations: `int x = 5;`, `float y = 3.14;`, `char c = 'A';`, `bool flag = true;`, `string s = "hello";`
 - Arithmetic expressions: `+`, `-`, `*`, `/`
 - Logical operators: `==`, `!=`, `<`, `>`
 - `print()` for console output
@@ -15,11 +15,13 @@
 - Function calls
 - Return statements
 - Expression statements
-- VS Code extension for `.tl` syntax highlighting
-- Published on the Visual Studio Marketplace
-- Data Types: int, bool, String, char, float
-- Funtion for input
-- Array implemented
+- **Arrays:** fixed-size and initialized arrays for all types (e.g., `int arr[10];`, `float nums[] = {1.1, 2.2};`, `char letters[] = {'A', 'B'};`)
+- Function for input: `input()`
+- **Improved error messages** with line/column info
+- **VS Code extension:**
+  - Syntax highlighting for all language features
+  - Code snippets for common patterns (function, loop, print, etc.)
+  - Available on the Visual Studio Marketplace
 
 ### 🛠 Setup
 
@@ -33,7 +35,33 @@
 
 make
 
-
-or manually 
+or manually
 
 g++ -std=c++17 -Wall -o tinylang.exe main.cpp lexer.cpp parser.cpp codegen.cpp
+
+#### ▶️ Run
+
+./tinylang.exe yourfile.tl
+
+### 💡 Example
+
+```tl
+int arr[] = {1, 2, 3, 4, 5};
+arr[2] = 42;
+print(arr[2]);
+
+float nums[3];
+nums[0] = 3.14;
+nums[1] = 2.71;
+nums[2] = nums[0] + nums[1];
+print(nums[2]);
+
+char letters[] = {'A', 'B', 'C'};
+print(letters[1]);
+bool flags[] = {true, false, true};
+flags[1] = true;
+print(flags[1]);
+
+string words[] = {"hello", "world"};
+print(words[0]);
+```

@@ -3,11 +3,37 @@
     "patterns": [
         {
             "name": "keyword.control.tinylang",
-            "match": "\\b(if|else|return|print|int|ComeAndDo)\\b"
+            "match": "\\b(if|else|return|print|for|while|ComeAndDo|read|input)\\b"
+        },
+        {
+            "name": "storage.type.tinylang",
+            "match": "\\b(int|float|char|bool|string)\\b"
+        },
+        {
+            "name": "constant.language.boolean.tinylang",
+            "match": "\\b(true|false)\\b"
         },
         {
             "name": "constant.numeric.tinylang",
-            "match": "\\b\\d+\\b"
+            "match": "\\b\\d+(?:\\.\\d+)?\\b"
+        },
+        {
+            "name": "string.quoted.double.tinylang",
+            "begin": '"',
+            "end": '"',
+            "patterns": [
+                { "name": "constant.character.escape.tinylang", "match": "\\\\." }
+            ]
+        },
+        {
+            "name": "string.quoted.single.tinylang",
+            "begin": "'",
+            "end": "'"
+        },
+        {
+            "name": "comment.line.double-slash.tinylang",
+            "begin": "//",
+            "end": "(?=$|\\n)"
         },
         {
             "name": "entity.name.function.tinylang",
