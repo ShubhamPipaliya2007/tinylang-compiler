@@ -5,6 +5,7 @@
 ### ✅ Features
 
 - Variable declarations: `int x = 5;`, `float y = 3.14;`, `char c = 'A';`, `bool flag = true;`, `string s = "hello";`
+- String variable assignment, printing, and concatenation: `string s2 = s1 + ", " + s3;`, `print(s2);`
 - Arithmetic expressions: `+`, `-`, `*`, `/`
 - Logical operators: `==`, `!=`, `<`, `>`
 - `print()` for console output
@@ -19,9 +20,9 @@
 - Function for input: `input()`
 - **Improved error messages** with line/column info
 - **VS Code extension:**
-  - Syntax highlighting for all language features
-  - Code snippets for common patterns (function, loop, print, etc.)
-  - Available on the Visual Studio Marketplace
+- Syntax highlighting for all language features
+- Code snippets for common patterns (function, loop, print, etc.)
+- Available on the Visual Studio Marketplace
 
 ### 🛠 Setup
 
@@ -64,4 +65,13 @@ print(flags[1]);
 
 string words[] = {"hello", "world"};
 print(words[0]);
+
+# String variable assignment and concatenation
+string s1 = "Hello";
+string s2 = "World";
+string s3 = s1 + ", " + s2;
+print(s3);
+string s4 = s3;
+print(s4);
+print("Done!");
 ```

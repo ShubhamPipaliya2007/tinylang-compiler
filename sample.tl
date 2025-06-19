@@ -18,6 +18,14 @@ print(flags[1]);
 string words[] = {"hello", "world"};
 print(words[0]);
 
+string s1 = "Hello";
+string s2 = "World";
+string s3 = s1 + ", " + s2;
+print(s3);
+string s4 = s3;
+print(s4);
+print("Done!");
+
 
 
 

@@ -14,20 +14,23 @@ static std::unordered_map<std::string, std::vector<char>> char_arrays;
 static std::unordered_map<std::string, std::vector<bool>> bool_arrays;
 static std::unordered_map<std::string, std::vector<std::string>> string_arrays;
 static std::unordered_map<std::string, const FunctionDef*> functions;
+static std::unordered_map<std::string, std::string> string_variables;
 
 // Forward declaration
 void execute(const Statement* stmt);
 
-enum class ValueType { INT, FLOAT, CHAR };
+enum class ValueType { INT, FLOAT, CHAR, STRING };
 
 struct Value {
     ValueType type;
     int i;
     double f;
     char c;
+    std::string s;
     Value(int v) : type(ValueType::INT), i(v), f(0), c(0) {}
     Value(double v) : type(ValueType::FLOAT), i(0), f(v), c(0) {}
     Value(char v) : type(ValueType::CHAR), i(0), f(0), c(v) {}
+    Value(const std::string& str) : type(ValueType::STRING), i(0), f(0), c(0), s(str) {}
 };
 
 Value evalExpr(const Expr* expr) {
@@ -44,17 +47,27 @@ Value evalExpr(const Expr* expr) {
         return Value(boolLit->value ? 1 : 0);
     } 
     else if (auto strLit = dynamic_cast<const StringLiteral*>(expr)) {
-        throw std::runtime_error("Cannot evaluate string literal to integer");
+        return Value(strLit->value);
     } 
     else if (auto var = dynamic_cast<const Variable*>(expr)) {
         if (variables.count(var->name)) return Value(variables[var->name]);
         if (float_variables.count(var->name)) return Value(float_variables[var->name]);
         if (char_variables.count(var->name)) return Value(char_variables[var->name]);
+        if (string_variables.count(var->name)) return Value(string_variables[var->name]);
         throw std::runtime_error("Undefined variable: " + var->name);
     } 
     else if (auto bin = dynamic_cast<const BinaryExpr*>(expr)) {
+        // Evaluate both sides first
         Value left = evalExpr(bin->left.get());
         Value right = evalExpr(bin->right.get());
+        // String concatenation if either is a string
+        if (bin->op == TokenType::PLUS) {
+            if (left.type == ValueType::STRING || right.type == ValueType::STRING) {
+                std::string lstr = (left.type == ValueType::STRING) ? left.s : std::to_string(left.i);
+                std::string rstr = (right.type == ValueType::STRING) ? right.s : std::to_string(right.i);
+                return Value(lstr + rstr);
+            }
+        }
         // Promote to float if either is float
         if (left.type == ValueType::FLOAT || right.type == ValueType::FLOAT) {
             double l = (left.type == ValueType::FLOAT) ? left.f : left.i;
@@ -216,9 +229,25 @@ void execute(const Statement* stmt) {
         } else if (assign->value && dynamic_cast<const BoolLiteral*>(assign->value.get())) {
             variables[assign->name] = evalExpr(assign->value.get()).i;
         } else if (assign->value && dynamic_cast<const StringLiteral*>(assign->value.get())) {
-            // Not implemented: string variables
+            string_variables[assign->name] = dynamic_cast<const StringLiteral*>(assign->value.get())->value;
+        } else if (assign->value && dynamic_cast<const Variable*>(assign->value.get())) {
+            auto var = dynamic_cast<const Variable*>(assign->value.get());
+            if (string_variables.count(var->name)) {
+                string_variables[assign->name] = string_variables[var->name];
+            } else {
+                variables[assign->name] = evalExpr(assign->value.get()).i;
+            }
         } else if (assign->value) {
-            variables[assign->name] = evalExpr(assign->value.get()).i;
+            Value val = evalExpr(assign->value.get());
+            if (val.type == ValueType::STRING) {
+                string_variables[assign->name] = val.s;
+            } else if (val.type == ValueType::FLOAT) {
+                float_variables[assign->name] = val.f;
+            } else if (val.type == ValueType::CHAR) {
+                char_variables[assign->name] = val.c;
+            } else {
+                variables[assign->name] = val.i;
+            }
         }
     } 
     else if (auto print = dynamic_cast<const Print*>(stmt)) {
@@ -234,6 +263,7 @@ void execute(const Statement* stmt) {
             if (variables.count(var->name)) std::cout << variables[var->name] << std::endl;
             else if (float_variables.count(var->name)) std::cout << float_variables[var->name] << std::endl;
             else if (char_variables.count(var->name)) std::cout << char_variables[var->name] << std::endl;
+            else if (string_variables.count(var->name)) std::cout << string_variables[var->name] << std::endl;
             else throw std::runtime_error("Undefined variable: " + var->name);
         } else if (auto arrAccess = dynamic_cast<const ArrayAccess*>(print->value.get())) {
             const std::string& name = arrAccess->arrayName;
@@ -246,7 +276,8 @@ void execute(const Statement* stmt) {
             else throw std::runtime_error("Undefined array: " + name);
         } else {
             Value value = evalExpr(print->value.get());
-            if (value.type == ValueType::FLOAT) std::cout << value.f << std::endl;
+            if (value.type == ValueType::STRING) std::cout << value.s << std::endl;
+            else if (value.type == ValueType::FLOAT) std::cout << value.f << std::endl;
             else if (value.type == ValueType::CHAR) std::cout << value.c << std::endl;
             else std::cout << value.i << std::endl;
         }
