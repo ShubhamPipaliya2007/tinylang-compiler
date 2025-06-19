@@ -26,6 +26,13 @@ string s4 = s3;
 print(s4);
 print("Done!");
 
+//Whats the output of this code?
+/*what is the output of this code?
+int arr[] = {1, 2, 3, 4, 5};
+arr[2] = 42;
+print(arr[2]);
+*/
+
 
 
 

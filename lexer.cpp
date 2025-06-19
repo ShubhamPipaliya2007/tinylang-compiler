@@ -14,6 +14,32 @@ std::vector<Token> tokenize(const std::string& input) {
         int token_line = line;
         int token_col = col;
 
+        // Handle single-line comments
+        if (c == '/' && i + 1 < input.length() && input[i + 1] == '/') {
+            i += 2; col += 2;
+            while (i < input.length() && input[i] != '\n') {
+                i++; col++;
+            }
+            continue;
+        }
+        // Handle multi-line comments
+        if (c == '/' && i + 1 < input.length() && input[i + 1] == '*') {
+            i += 2; col += 2;
+            while (i < input.length()) {
+                if (input[i] == '*' && i + 1 < input.length() && input[i + 1] == '/') {
+                    i += 2; col += 2;
+                    break;
+                }
+                if (input[i] == '\n') {
+                    line++;
+                    col = 1;
+                    i++;
+                } else {
+                    i++; col++;
+                }
+            }
+            continue;
+        }
         if (c == '\n') {
             i++;
             line++;

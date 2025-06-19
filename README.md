@@ -6,6 +6,7 @@
 
 - Variable declarations: `int x = 5;`, `float y = 3.14;`, `char c = 'A';`, `bool flag = true;`, `string s = "hello";`
 - String variable assignment, printing, and concatenation: `string s2 = s1 + ", " + s3;`, `print(s2);`
+- Single-line (`// ...`) and multi-line (`/* ... */`) comments
 - Arithmetic expressions: `+`, `-`, `*`, `/`
 - Logical operators: `==`, `!=`, `<`, `>`
 - `print()` for console output
@@ -47,6 +48,11 @@ g++ -std=c++17 -Wall -o tinylang.exe main.cpp lexer.cpp parser.cpp codegen.cpp
 ### 💡 Example
 
 ```tl
+// This is a single-line comment
+/*
+   This is a multi-line comment
+   It can span multiple lines
+*/
 int arr[] = {1, 2, 3, 4, 5};
 arr[2] = 42;
 print(arr[2]);
