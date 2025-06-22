@@ -9,7 +9,8 @@
 - Local and global variable scoping: Variables declared inside functions are local, outside are global
 - Single-line (`// ...`) and multi-line (`/* ... */`) comments
 - Arithmetic expressions: `+`, `-`, `*`, `/`
-- Logical operators: `==`, `!=`, `<`, `>`
+- Logical operators: `==`, `!=`, `<`, `>`, `&&`, `||`, `!` (with correct precedence and short-circuiting)
+- Improved unary operator support: `!`, `-` (can be nested and combined)
 - `print()` for console output
 - Conditional statements: `if`, `else`
 - `while` loops
@@ -22,9 +23,9 @@
 - Function for input: `input()`
 - **Improved error messages** with line/column info
 - **VS Code extension:**
-- Syntax highlighting for all language features
-- Code snippets for common patterns (function, loop, print, etc.)
-- Available on the Visual Studio Marketplace
+  - Syntax highlighting for all language features, including logical and unary operators
+  - Code snippets for common patterns (function, loop, print, etc.)
+  - Available on the Visual Studio Marketplace
 
 ### 🛠 Setup
 
@@ -49,6 +50,18 @@ g++ -std=c++17 -Wall -o tinylang.exe main.cpp lexer.cpp parser.cpp codegen.cpp
 ### 💡 Example
 
 ```tl
+// Logical operators and NOT
+int a = 5;
+int b = 10;
+int c = 0;
+
+print(a > 0 && b < 20); // 1 (true)
+print(a > 10 || b < 20); // 1 (true)
+print(!(a > 10)); // 1 (true)
+print(a > 0 && c > 0); // 0 (false)
+print(a > 10 || c > 0); // 0 (false)
+print(!c); // 1 (true)
+
 // This is a single-line comment
 /*
    This is a multi-line comment
@@ -94,3 +107,11 @@ ComeAndDo testScope() {
 testScope();
 print(x); // Prints 100 (global again)
 ```
+
+---
+
+### 🐞 Bugfixes & Improvements
+- Fixed operator precedence for logical and arithmetic expressions
+- Added support for unary NOT (`!`) and correct parsing of nested/unary expressions
+- Improved error messages for missing semicolons and parentheses
+- Parser and codegen now handle all logical operators and short-circuiting

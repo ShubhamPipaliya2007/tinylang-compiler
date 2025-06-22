@@ -40,7 +40,10 @@ enum class TokenType {
     FLOAT,           // float keyword
     CHAR,            // char keyword
     FLOAT_LITERAL,   // float literal
-    CHAR_LITERAL     // char literal
+    CHAR_LITERAL,    // char literal
+    AND,             // &&
+    OR,              // ||
+    NOT              // !
 };
 
 

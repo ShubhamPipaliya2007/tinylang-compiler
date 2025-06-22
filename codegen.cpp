@@ -108,7 +108,27 @@ Value evalExpr(const Expr* expr) {
         try { return Value(getStringVar(var->name)); } catch (...) {}
         throw std::runtime_error("Undefined variable: " + var->name);
     } 
+    else if (auto unary = dynamic_cast<const UnaryExpr*>(expr)) {
+        Value operand = evalExpr(unary->operand.get());
+        if (unary->op == TokenType::NOT) {
+            return Value(operand.i == 0 ? 1 : 0);
+        }
+        throw std::runtime_error("Unsupported unary operator");
+    }
     else if (auto bin = dynamic_cast<const BinaryExpr*>(expr)) {
+        // Logical operators with short-circuit evaluation
+        if (bin->op == TokenType::AND) {
+            Value left = evalExpr(bin->left.get());
+            if (left.i == 0) return Value(0); // Short-circuit: false && anything = false
+            Value right = evalExpr(bin->right.get());
+            return Value((left.i != 0 && right.i != 0) ? 1 : 0);
+        }
+        if (bin->op == TokenType::OR) {
+            Value left = evalExpr(bin->left.get());
+            if (left.i != 0) return Value(1); // Short-circuit: true || anything = true
+            Value right = evalExpr(bin->right.get());
+            return Value((left.i != 0 || right.i != 0) ? 1 : 0);
+        }
         // Evaluate both sides first
         Value left = evalExpr(bin->left.get());
         Value right = evalExpr(bin->right.get());

@@ -160,7 +160,25 @@ std::vector<Token> tokenize(const std::string& input) {
                         type = TokenType::NOTEQUALTO; val = "!=";
                         i++; col++;
                     } else {
-                        throw std::runtime_error("Unexpected token: ! at line " + std::to_string(token_line) + ", column " + std::to_string(token_col));
+                        type = TokenType::NOT;
+                    }
+                    break;
+                case '&':
+                    if (i + 1 < input.length() && input[i + 1] == '&') {
+                        type = TokenType::AND; val = "&&";
+                        i++; col++;
+                    } else {
+                        std::cerr << "Unknown character: " << c << " at line " << line << ", column " << col << "\n";
+                        valid = false;
+                    }
+                    break;
+                case '|':
+                    if (i + 1 < input.length() && input[i + 1] == '|') {
+                        type = TokenType::OR; val = "||";
+                        i++; col++;
+                    } else {
+                        std::cerr << "Unknown character: " << c << " at line " << line << ", column " << col << "\n";
+                        valid = false;
                     }
                     break;
                 default:

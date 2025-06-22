@@ -37,6 +37,14 @@ struct BinaryExpr : Expr {
         : left(std::move(l)), right(std::move(r)), op(o) {}
 };
 
+struct UnaryExpr : Expr {
+    std::unique_ptr<Expr> operand;
+    TokenType op;
+
+    UnaryExpr(TokenType o, std::unique_ptr<Expr> operand)
+        : operand(std::move(operand)), op(o) {}
+};
+
 // ➕ NEW: input()
 struct InputExpr : Expr {
     InputExpr() = default;

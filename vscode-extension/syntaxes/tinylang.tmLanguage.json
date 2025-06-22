@@ -36,6 +36,11 @@
             "end": "(?=$|\\n)"
         },
         {
+            "name": "comment.line.hash.tinylang",
+            "begin": "#",
+            "end": "(?=$|\\n)"
+        },
+        {
             "name": "entity.name.function.tinylang",
             "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*\\()"
         }

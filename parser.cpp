@@ -47,6 +47,7 @@ static std::unique_ptr<Expr> parseArrayLiteral() {
 
 static std::unique_ptr<Expr> parsePrimary() {
     Token token = advance();
+    // std::cout << "[DEBUG] parsePrimary: current token index=" << current << std::endl;
 
     switch (token.type) {
         case TokenType::NUMBER:
@@ -59,7 +60,9 @@ static std::unique_ptr<Expr> parsePrimary() {
             return std::make_unique<BoolLiteral>(token.value == "true");
         case TokenType::STRING_LITERAL:
             return std::make_unique<StringLiteral>(token.value);  // ensure lexer stores the string literal correctly
-
+        // case TokenType::NOT:
+        //     std::cout << "[DEBUG] Parsing unary NOT" << std::endl;
+        //     return std::make_unique<UnaryExpr>(TokenType::NOT, parsePrimary());
         case TokenType::IDENTIFIER: {
             std::string name = token.value;
             if (match(TokenType::LPAREN)) {
@@ -111,21 +114,36 @@ static std::unique_ptr<Expr> parsePrimary() {
 }
 
 int getPrecedence(TokenType type) {
+    int prec = -1;
     switch (type) {
         case TokenType::MULTIPLICATION:
-        case TokenType::DIVISION: return 2;
+        case TokenType::DIVISION: prec = 4; break;
         case TokenType::PLUS:
-        case TokenType::MINUS: return 1;
+        case TokenType::MINUS: prec = 3; break;
         case TokenType::GREATERTHEN:
         case TokenType::LESSTHEN:
         case TokenType::EQUALTO:
-        case TokenType::NOTEQUALTO: return 1;
-        default: return 0;
+        case TokenType::NOTEQUALTO: prec = 2; break;
+        case TokenType::AND: prec = 1; break;
+        case TokenType::OR: prec = 0; break;
+        case TokenType::NOT: prec = 5; break;
+        default: prec = -1; break;
     }
+    // std::cout << "[DEBUG] getPrecedence: type=" << (int)type << ", prec=" << prec << std::endl;
+    return prec;
+}
+
+static std::unique_ptr<Expr> parseUnary() {
+    if (match(TokenType::NOT) || match(TokenType::MINUS)) {
+        Token op = tokens[current - 1];
+        auto operand = parseUnary();
+        return std::make_unique<UnaryExpr>(op.type, std::move(operand));
+    }
+    return parsePrimary();
 }
 
 static std::unique_ptr<Expr> parseBinaryExpr(int minPrec) {
-    auto left = parsePrimary();
+    auto left = parseUnary();
     while (true) {
         TokenType opType = peek().type;
         int prec = getPrecedence(opType);
@@ -138,7 +156,8 @@ static std::unique_ptr<Expr> parseBinaryExpr(int minPrec) {
 }
 
 static std::unique_ptr<Expr> parseExpression() {
-    return parseBinaryExpr(1);
+    // std::cout << "[DEBUG] parseExpression: starting" << std::endl;
+    return parseBinaryExpr(0);
 }
 
 static std::unique_ptr<Statement> parseSimpleAssignment() {
@@ -329,6 +348,13 @@ static std::unique_ptr<Statement> parseStatement() {
 std::vector<std::unique_ptr<Statement>> parse(const std::vector<Token>& inputTokens) {
     tokens = inputTokens;
     current = 0;
+    
+    // Debug: Print all tokens
+    // std::cout << "[DEBUG] All tokens:" << std::endl;
+    // for (size_t i = 0; i < tokens.size(); i++) {
+    //     std::cout << "[DEBUG] Token " << i << ": type=" << (int)tokens[i].type << ", value='" << tokens[i].value << "'" << std::endl;
+    // }
+    
     std::vector<std::unique_ptr<Statement>> statements;
     while (peek().type != TokenType::END) {
         statements.push_back(parseStatement());
