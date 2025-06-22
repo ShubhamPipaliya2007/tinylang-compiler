@@ -5,16 +5,16 @@
 #include <vector>
 #include <string>
 
-static std::unordered_map<std::string, int> variables;
-static std::unordered_map<std::string, double> float_variables;
-static std::unordered_map<std::string, char> char_variables;
+static std::vector<std::unordered_map<std::string, int>> variables_stack{ { } };
+static std::vector<std::unordered_map<std::string, double>> float_variables_stack{ { } };
+static std::vector<std::unordered_map<std::string, char>> char_variables_stack{ { } };
+static std::vector<std::unordered_map<std::string, std::string>> string_variables_stack{ { } };
 static std::unordered_map<std::string, std::vector<int>> int_arrays;
 static std::unordered_map<std::string, std::vector<double>> float_arrays;
 static std::unordered_map<std::string, std::vector<char>> char_arrays;
 static std::unordered_map<std::string, std::vector<bool>> bool_arrays;
 static std::unordered_map<std::string, std::vector<std::string>> string_arrays;
 static std::unordered_map<std::string, const FunctionDef*> functions;
-static std::unordered_map<std::string, std::string> string_variables;
 
 // Forward declaration
 void execute(const Statement* stmt);
@@ -33,6 +33,58 @@ struct Value {
     Value(const std::string& str) : type(ValueType::STRING), i(0), f(0), c(0), s(str) {}
 };
 
+// Helper functions for variable lookup and assignment
+int getIntVar(const std::string& name) {
+    for (auto it = variables_stack.rbegin(); it != variables_stack.rend(); ++it) {
+        if (it->count(name)) return (*it)[name];
+    }
+    throw std::runtime_error("Undefined variable: " + name);
+}
+void setIntVar(const std::string& name, int value) {
+    // Only check the current scope (top of stack)
+    if (variables_stack.back().count(name)) {
+        variables_stack.back()[name] = value;
+    } else {
+        variables_stack.back()[name] = value;
+    }
+}
+double getFloatVar(const std::string& name) {
+    for (auto it = float_variables_stack.rbegin(); it != float_variables_stack.rend(); ++it) {
+        if (it->count(name)) return (*it)[name];
+    }
+    throw std::runtime_error("Undefined float variable: " + name);
+}
+void setFloatVar(const std::string& name, double value) {
+    for (auto it = float_variables_stack.rbegin(); it != float_variables_stack.rend(); ++it) {
+        if (it->count(name)) { (*it)[name] = value; return; }
+    }
+    float_variables_stack.back()[name] = value;
+}
+char getCharVar(const std::string& name) {
+    for (auto it = char_variables_stack.rbegin(); it != char_variables_stack.rend(); ++it) {
+        if (it->count(name)) return (*it)[name];
+    }
+    throw std::runtime_error("Undefined char variable: " + name);
+}
+void setCharVar(const std::string& name, char value) {
+    for (auto it = char_variables_stack.rbegin(); it != char_variables_stack.rend(); ++it) {
+        if (it->count(name)) { (*it)[name] = value; return; }
+    }
+    char_variables_stack.back()[name] = value;
+}
+std::string getStringVar(const std::string& name) {
+    for (auto it = string_variables_stack.rbegin(); it != string_variables_stack.rend(); ++it) {
+        if (it->count(name)) return (*it)[name];
+    }
+    throw std::runtime_error("Undefined string variable: " + name);
+}
+void setStringVar(const std::string& name, const std::string& value) {
+    for (auto it = string_variables_stack.rbegin(); it != string_variables_stack.rend(); ++it) {
+        if (it->count(name)) { (*it)[name] = value; return; }
+    }
+    string_variables_stack.back()[name] = value;
+}
+
 Value evalExpr(const Expr* expr) {
     if (auto num = dynamic_cast<const Number*>(expr)) {
         return Value(num->value);
@@ -50,10 +102,10 @@ Value evalExpr(const Expr* expr) {
         return Value(strLit->value);
     } 
     else if (auto var = dynamic_cast<const Variable*>(expr)) {
-        if (variables.count(var->name)) return Value(variables[var->name]);
-        if (float_variables.count(var->name)) return Value(float_variables[var->name]);
-        if (char_variables.count(var->name)) return Value(char_variables[var->name]);
-        if (string_variables.count(var->name)) return Value(string_variables[var->name]);
+        try { return Value(getIntVar(var->name)); } catch (...) {}
+        try { return Value(getFloatVar(var->name)); } catch (...) {}
+        try { return Value(getCharVar(var->name)); } catch (...) {}
+        try { return Value(getStringVar(var->name)); } catch (...) {}
         throw std::runtime_error("Undefined variable: " + var->name);
     } 
     else if (auto bin = dynamic_cast<const BinaryExpr*>(expr)) {
@@ -124,19 +176,20 @@ Value evalExpr(const Expr* expr) {
     else if (auto call = dynamic_cast<const CallExpr*>(expr)) {
         if (!functions.count(call->callee))
             throw std::runtime_error("Undefined function: " + call->callee);
-
         const FunctionDef* func = functions[call->callee];
         if (call->arguments.size() != func->parameters.size())
             throw std::runtime_error("Argument count mismatch in call to " + call->callee);
-
-        auto backup = variables;
-        auto backupf = float_variables;
-        auto backupc = char_variables;
-
+        // Push new local scopes
+        variables_stack.push_back({});
+        float_variables_stack.push_back({});
+        char_variables_stack.push_back({});
+        string_variables_stack.push_back({});
         for (size_t i = 0; i < call->arguments.size(); ++i) {
             Value argVal = evalExpr(call->arguments[i].get());
-            // For now, only support int
-            variables[func->parameters[i]] = (argVal.type == ValueType::FLOAT) ? (int)argVal.f : (argVal.type == ValueType::CHAR ? argVal.c : argVal.i);
+            if (argVal.type == ValueType::FLOAT) setFloatVar(func->parameters[i], argVal.f);
+            else if (argVal.type == ValueType::CHAR) setCharVar(func->parameters[i], argVal.c);
+            else if (argVal.type == ValueType::STRING) setStringVar(func->parameters[i], argVal.s);
+            else setIntVar(func->parameters[i], argVal.i);
         }
 
         int returnValue = 0;
@@ -149,9 +202,11 @@ Value evalExpr(const Expr* expr) {
             }
         }
 
-        variables = backup;
-        float_variables = backupf;
-        char_variables = backupc;
+        // Pop local scopes
+        if (variables_stack.size() > 1) variables_stack.pop_back();
+        if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
+        if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
+        if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
         return Value(returnValue);
     }
     else if (auto arrAccess = dynamic_cast<const ArrayAccess*>(expr)) {
@@ -177,8 +232,27 @@ void execute(const Statement* stmt) {
         functions[func->name] = func;
     } 
     else if (auto assign = dynamic_cast<const Assignment*>(stmt)) {
+        // Handle normal variable declarations with initialization
+        if (!assign->type.empty() && assign->value) {
+            if (assign->type == "int" && dynamic_cast<const Number*>(assign->value.get())) {
+                setIntVar(assign->name, evalExpr(assign->value.get()).i);
+                return;
+            } else if (assign->type == "float" && dynamic_cast<const FloatLiteral*>(assign->value.get())) {
+                setFloatVar(assign->name, evalExpr(assign->value.get()).f);
+                return;
+            } else if (assign->type == "char" && dynamic_cast<const CharLiteral*>(assign->value.get())) {
+                setCharVar(assign->name, evalExpr(assign->value.get()).c);
+                return;
+            } else if (assign->type == "bool" && dynamic_cast<const BoolLiteral*>(assign->value.get())) {
+                setIntVar(assign->name, evalExpr(assign->value.get()).i);
+                return;
+            } else if (assign->type == "string" && dynamic_cast<const StringLiteral*>(assign->value.get())) {
+                setStringVar(assign->name, evalExpr(assign->value.get()).s);
+                return;
+            }
+        }
         // Fixed-size array declaration: e.g., float nums[3];
-        if (!assign->type.empty() && assign->value && dynamic_cast<const Number*>(assign->value.get())) {
+        if (!assign->type.empty() && assign->value && dynamic_cast<const Number*>(assign->value.get()) && assign->name.find('[') != std::string::npos) {
             int size = evalExpr(assign->value.get()).i;
             if (assign->type == "float") {
                 float_arrays[assign->name] = std::vector<double>(size, 0.0);
@@ -223,31 +297,26 @@ void execute(const Statement* stmt) {
                 throw std::runtime_error("Unsupported array literal type");
             }
         } else if (assign->value && dynamic_cast<const FloatLiteral*>(assign->value.get())) {
-            float_variables[assign->name] = evalExpr(assign->value.get()).f;
+            setFloatVar(assign->name, evalExpr(assign->value.get()).f);
         } else if (assign->value && dynamic_cast<const CharLiteral*>(assign->value.get())) {
-            char_variables[assign->name] = evalExpr(assign->value.get()).c;
+            setCharVar(assign->name, evalExpr(assign->value.get()).c);
         } else if (assign->value && dynamic_cast<const BoolLiteral*>(assign->value.get())) {
-            variables[assign->name] = evalExpr(assign->value.get()).i;
+            setIntVar(assign->name, evalExpr(assign->value.get()).i);
         } else if (assign->value && dynamic_cast<const StringLiteral*>(assign->value.get())) {
-            string_variables[assign->name] = dynamic_cast<const StringLiteral*>(assign->value.get())->value;
+            setStringVar(assign->name, dynamic_cast<const StringLiteral*>(assign->value.get())->value);
         } else if (assign->value && dynamic_cast<const Variable*>(assign->value.get())) {
             auto var = dynamic_cast<const Variable*>(assign->value.get());
-            if (string_variables.count(var->name)) {
-                string_variables[assign->name] = string_variables[var->name];
+            if (string_variables_stack.back().count(var->name)) {
+                setStringVar(assign->name, string_variables_stack.back()[var->name]);
             } else {
-                variables[assign->name] = evalExpr(assign->value.get()).i;
+                setIntVar(assign->name, evalExpr(assign->value.get()).i);
             }
         } else if (assign->value) {
             Value val = evalExpr(assign->value.get());
-            if (val.type == ValueType::STRING) {
-                string_variables[assign->name] = val.s;
-            } else if (val.type == ValueType::FLOAT) {
-                float_variables[assign->name] = val.f;
-            } else if (val.type == ValueType::CHAR) {
-                char_variables[assign->name] = val.c;
-            } else {
-                variables[assign->name] = val.i;
-            }
+            if (val.type == ValueType::STRING) setStringVar(assign->name, val.s);
+            else if (val.type == ValueType::FLOAT) setFloatVar(assign->name, val.f);
+            else if (val.type == ValueType::CHAR) setCharVar(assign->name, val.c);
+            else setIntVar(assign->name, val.i);
         }
     } 
     else if (auto print = dynamic_cast<const Print*>(stmt)) {
@@ -260,11 +329,11 @@ void execute(const Statement* stmt) {
         } else if (auto charLit = dynamic_cast<const CharLiteral*>(print->value.get())) {
             std::cout << charLit->value << std::endl;
         } else if (auto var = dynamic_cast<const Variable*>(print->value.get())) {
-            if (variables.count(var->name)) std::cout << variables[var->name] << std::endl;
-            else if (float_variables.count(var->name)) std::cout << float_variables[var->name] << std::endl;
-            else if (char_variables.count(var->name)) std::cout << char_variables[var->name] << std::endl;
-            else if (string_variables.count(var->name)) std::cout << string_variables[var->name] << std::endl;
-            else throw std::runtime_error("Undefined variable: " + var->name);
+            try { std::cout << getIntVar(var->name) << std::endl; return; } catch (...) {}
+            try { std::cout << getFloatVar(var->name) << std::endl; return; } catch (...) {}
+            try { std::cout << getCharVar(var->name) << std::endl; return; } catch (...) {}
+            try { std::cout << getStringVar(var->name) << std::endl; return; } catch (...) {}
+            throw std::runtime_error("Undefined variable: " + var->name);
         } else if (auto arrAccess = dynamic_cast<const ArrayAccess*>(print->value.get())) {
             const std::string& name = arrAccess->arrayName;
             int idx = evalExpr(arrAccess->index.get()).i;

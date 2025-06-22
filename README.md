@@ -6,6 +6,7 @@
 
 - Variable declarations: `int x = 5;`, `float y = 3.14;`, `char c = 'A';`, `bool flag = true;`, `string s = "hello";`
 - String variable assignment, printing, and concatenation: `string s2 = s1 + ", " + s3;`, `print(s2);`
+- Local and global variable scoping: Variables declared inside functions are local, outside are global
 - Single-line (`// ...`) and multi-line (`/* ... */`) comments
 - Arithmetic expressions: `+`, `-`, `*`, `/`
 - Logical operators: `==`, `!=`, `<`, `>`
@@ -80,4 +81,16 @@ print(s3);
 string s4 = s3;
 print(s4);
 print("Done!");
+
+# Local and global variable scoping
+int x = 100;
+print(x); // Prints 100 (global)
+
+ComeAndDo testScope() {
+    int x = 42;
+    print(x); // Prints 42 (local)
+}
+
+testScope();
+print(x); // Prints 100 (global again)
 ```
