@@ -196,3 +196,12 @@ struct ObjectMethodCall : Expr {
         : object(std::move(obj)), method(std::move(m)), arguments(std::move(args)) {}
 };
 
+// AST node for object instantiation with constructor arguments
+struct ObjectInstantiation : Statement {
+    std::string className;
+    std::string varName;
+    std::vector<std::unique_ptr<Expr>> arguments;
+    ObjectInstantiation(std::string c, std::string v, std::vector<std::unique_ptr<Expr>> args)
+        : className(std::move(c)), varName(std::move(v)), arguments(std::move(args)) {}
+};
+

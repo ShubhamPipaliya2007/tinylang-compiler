@@ -28,9 +28,10 @@
   - Available on the Visual Studio Marketplace
 - **OOP Support:**
   - Class definitions with fields and methods
-  - Object instantiation (e.g., `Person p;`)
+  - Object instantiation (e.g., `Person p;` or `Person p("Alice", 30);`)
   - Field assignment and access (e.g., `p.name = "Alice";`, `print(p.name);`)
   - Method calls on objects (e.g., `p.greet();`)
+  - **Constructor support:** Use an `init` method for initialization, called automatically on instantiation with arguments
 
 ### 🛠 Setup
 
@@ -111,6 +112,26 @@ ComeAndDo testScope() {
 
 testScope();
 print(x); // Prints 100 (global again)
+```
+
+#### Example: OOP with Constructor
+```tl
+class Person {
+    string name;
+    int age;
+
+    ComeAndDo init(string n, int a) {
+        name = n;
+        age = a;
+    }
+
+    ComeAndDo greet() {
+        print("Hello, my name is " + name + ", I am " + age + " years old.");
+    }
+}
+
+Person p("Alice", 30);
+p.greet();
 ```
 
 ---

@@ -3,12 +3,15 @@ class Person {
     string name;
     int age;
 
+    ComeAndDo init(string n, int a) {
+        name = n;
+        age = a;
+    }
+
     ComeAndDo greet() {
         print("Hello, my name is " + name + ", I am " + age + " years old.");
     }
 }
 
-Person p;
-p.name = "Alice";
-p.age = 30;
+Person p("Alice", 15);
 p.greet();

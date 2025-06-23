@@ -427,7 +427,7 @@ static std::unique_ptr<Statement> parseStatement() {
             throw std::runtime_error(errorMsg("Expected ';' after return", peek()));
         return std::make_unique<Return>(std::move(expr));
     }
-    // Support object instantiation: <ClassName> <var>;
+    // Support object instantiation: <ClassName> <var>(args...);
     if (peek().type == TokenType::IDENTIFIER) {
         std::string typeName = peek().value;
         // Check if this identifier is a known class name
@@ -436,11 +436,26 @@ static std::unique_ptr<Statement> parseStatement() {
             if (peek().type != TokenType::IDENTIFIER)
                 throw std::runtime_error(errorMsg("Expected variable name after class type", peek()));
             std::string varName = advance().value;
+            // Check for constructor arguments
+            std::vector<std::unique_ptr<Expr>> args;
+            if (match(TokenType::LPAREN)) {
+                if (!match(TokenType::RPAREN)) {
+                    do {
+                        args.push_back(parseExpression());
+                    } while (match(TokenType::COMMA));
+                    if (!match(TokenType::RPAREN))
+                        throw std::runtime_error(errorMsg("Expected ')' after constructor arguments", peek()));
+                }
+            }
             if (!match(TokenType::SEMICOLON))
                 throw std::runtime_error(errorMsg("Expected ';' after object declaration", peek()));
-            std::cout << "[DEBUG][Parser] Parsed object instantiation: " << typeName << " " << varName << ";" << std::endl;
-            // Assignment node with type = class name, value = nullptr
-            return std::make_unique<Assignment>(varName, nullptr, typeName);
+            if (!args.empty()) {
+                std::cout << "[DEBUG][Parser] Parsed object instantiation with constructor: " << typeName << " " << varName << "(...)" << std::endl;
+                return std::make_unique<ObjectInstantiation>(typeName, varName, std::move(args));
+            } else {
+                std::cout << "[DEBUG][Parser] Parsed object instantiation: " << typeName << " " << varName << ";" << std::endl;
+                return std::make_unique<Assignment>(varName, nullptr, typeName);
+            }
         }
     }
     // Assignment to variable or object field: <assignable> = expr;
@@ -510,6 +525,10 @@ static std::vector<std::string> parseParameterList() {
     std::vector<std::string> params;
     if (!match(TokenType::RPAREN)) {
         do {
+            // Support typed parameters: <type> <name>
+            if (peek().type == TokenType::INT || peek().type == TokenType::FLOAT || peek().type == TokenType::CHAR || peek().type == TokenType::BOOL || peek().type == TokenType::STRING_TYPE) {
+                advance(); // skip type
+            }
             if (peek().type != TokenType::IDENTIFIER)
                 throw std::runtime_error(errorMsg("Expected parameter name", peek()));
             params.push_back(advance().value);

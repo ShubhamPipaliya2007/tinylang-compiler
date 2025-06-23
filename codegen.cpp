@@ -284,7 +284,6 @@ Value evalExpr(const Expr* expr) {
         const Variable* var = dynamic_cast<const Variable*>(objMethod->object.get());
         if (!var) throw std::runtime_error("Only simple object variables supported for method calls");
         const std::string& objName = var->name;
-        std::cout << "[DEBUG] Calling method: " << objName << "." << objMethod->method << std::endl;
         if (!objects.count(objName)) throw std::runtime_error("Undefined object: " + objName);
         const ObjectInstance& inst = objects.at(objName);
         // Find the class definition
@@ -352,9 +351,7 @@ void execute(const Statement* stmt) {
     else if (auto assign = dynamic_cast<const Assignment*>(stmt)) {
         // 🔁 OBJECT INSTANTIATION FIRST
         if (class_defs.count(assign->type) && assign->value == nullptr) {
-            std::cout << "[DEBUG] Instantiating object: " << assign->name
-                      << " of class " << assign->type << std::endl;
-
+            // Create the object instance
             ObjectInstance inst;
             inst.className = assign->type;
             for (const auto& field : class_defs[assign->type]->fields) {
@@ -373,7 +370,6 @@ void execute(const Statement* stmt) {
             size_t dot = assign->name.find('.');
             std::string objName = assign->name.substr(0, dot);
             std::string fieldName = assign->name.substr(dot + 1);
-            std::cout << "[DEBUG] Assigning field: " << objName << "." << fieldName << std::endl;
 
             if (!objects.count(objName)) throw std::runtime_error("Undefined object: " + objName);
             Value val = evalExpr(assign->value.get());
@@ -385,11 +381,6 @@ void execute(const Statement* stmt) {
                 std::variant<int, double, char, std::string>(val.s);
             return;
         }
-
-        // ✅ General debug
-        std::cout << "[DEBUG][Codegen] Assignment: name=" << assign->name
-                  << ", type=" << assign->type
-                  << ", value=" << (assign->value ? "not null" : "null") << std::endl;
 
         // 📌 Primitive variable declarations with literals
         if (!assign->type.empty() && assign->value) {
@@ -425,6 +416,7 @@ void execute(const Statement* stmt) {
         else if (value.type == ValueType::FLOAT) std::cout << value.f << std::endl;
         else if (value.type == ValueType::CHAR) std::cout << value.c << std::endl;
         else std::cout << value.i << std::endl;
+        return;
     }
 
     // If-statement
@@ -470,8 +462,72 @@ void execute(const Statement* stmt) {
 
     // Class definition
     else if (auto classdef = dynamic_cast<const ClassDef*>(stmt)) {
-        std::cout << "[DEBUG] Registering class: " << classdef->name << std::endl;
         class_defs[classdef->name] = classdef;
+        return;
+    }
+
+    // Object instantiation
+    else if (auto objinst = dynamic_cast<const ObjectInstantiation*>(stmt)) {
+        // Create the object instance
+        ObjectInstance inst;
+        inst.className = objinst->className;
+        for (const auto& field : class_defs[objinst->className]->fields) {
+            if (field.first == "int") inst.fields[field.second] = 0;
+            else if (field.first == "float") inst.fields[field.second] = 0.0;
+            else if (field.first == "char") inst.fields[field.second] = '\0';
+            else if (field.first == "string") inst.fields[field.second] = std::string("");
+            else if (field.first == "bool") inst.fields[field.second] = 0;
+        }
+        objects[objinst->varName] = inst;
+        // Call constructor (init method) if arguments are provided
+        if (!objinst->arguments.empty()) {
+            const ClassDef* classDef = class_defs[objinst->className];
+            const FunctionDef* ctor = nullptr;
+            for (const auto& m : classDef->methods) {
+                if (m->name == "init") { ctor = m.get(); break; }
+            }
+            if (!ctor) throw std::runtime_error("Constructor 'init' not found in class " + objinst->className);
+            if (objinst->arguments.size() != ctor->parameters.size())
+                throw std::runtime_error("Constructor argument count mismatch for class " + objinst->className);
+            // Push new local scopes
+            variables_stack.push_back({});
+            float_variables_stack.push_back({});
+            char_variables_stack.push_back({});
+            string_variables_stack.push_back({});
+            // Set up fields as locals
+            for (const auto& field : inst.fields) {
+                if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
+                else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
+                else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
+                else if (std::holds_alternative<std::string>(field.second)) setStringVar(field.first, std::get<std::string>(field.second));
+            }
+            // Set up parameters
+            for (size_t i = 0; i < objinst->arguments.size(); ++i) {
+                Value argVal = evalExpr(objinst->arguments[i].get());
+                if (argVal.type == ValueType::FLOAT) setFloatVar(ctor->parameters[i], argVal.f);
+                else if (argVal.type == ValueType::CHAR) setCharVar(ctor->parameters[i], argVal.c);
+                else if (argVal.type == ValueType::STRING) setStringVar(ctor->parameters[i], argVal.s);
+                else setIntVar(ctor->parameters[i], argVal.i);
+            }
+            // Execute constructor body
+            for (const auto& stmt : ctor->body) {
+                execute(stmt.get());
+            }
+            // Update fields from local scope after constructor
+            for (auto& field : class_defs[objinst->className]->fields) {
+                const std::string& fname = field.second;
+                if (string_variables_stack.back().count(fname)) objects[objinst->varName].fields[fname] = string_variables_stack.back()[fname];
+                else if (variables_stack.back().count(fname)) objects[objinst->varName].fields[fname] = variables_stack.back()[fname];
+                else if (float_variables_stack.back().count(fname)) objects[objinst->varName].fields[fname] = float_variables_stack.back()[fname];
+                else if (char_variables_stack.back().count(fname)) objects[objinst->varName].fields[fname] = char_variables_stack.back()[fname];
+            }
+            // Pop local scopes
+            if (variables_stack.size() > 1) variables_stack.pop_back();
+            if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
+            if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
+            if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
+        }
+        return;
     }
 
     // Default fallback
@@ -492,8 +548,6 @@ void run(const std::vector<std::unique_ptr<Statement>>& statements) {
     for (const auto& stmt : statements) {
         if (auto assign = dynamic_cast<const Assignment*>(stmt.get())) {
             if (class_defs.count(assign->type) && assign->value == nullptr) {
-                std::cout << "[DEBUG][Run] Instantiating object from assignment: " << assign->name
-                        << " of type: " << assign->type << std::endl;
                 execute(stmt.get());  // instantiate object
             }
         }
