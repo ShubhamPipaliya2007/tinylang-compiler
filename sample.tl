@@ -1,23 +1,14 @@
-// Test for global and local variable scoping
-int x = 10;
-print(x); // Should print 10
+// Example: Basic class definition and usage in TinyLang
+class Person {
+    string name;
+    int age;
 
-ComeAndDo testScope() {
-    int x = 42 + 10;
-    print(x); // Should print 52 (local)
+    ComeAndDo greet() {
+        print("Hello, my name is " + name + ", I am " + age + " years old.");
+    }
 }
 
-testScope();
-print(x); // Should print 10 (global)
-
-// Logical operators test
-int a = 5;
-int b = 10;
-int c = 0;
-
-print(a > 0 && b < 20);
-print(a > 10 || b < 20);
-print(!(a > 10));
-print(a > 0 && c > 0);
-print(a > 10 || c > 0);
-print(!c);
+Person p;
+p.name = "Alice";
+p.age = 30;
+p.greet();

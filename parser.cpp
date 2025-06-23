@@ -1,12 +1,17 @@
 #include "parser.hpp"
 #include <stdexcept>
 #include <iostream>
+#include <algorithm>
 
 static size_t current = 0;
 static std::vector<Token> tokens;
 static std::unique_ptr<Statement> parseFunction();
 static std::unique_ptr<Expr> parseExpression();
 static std::vector<std::string> parseParameterList();
+static std::unique_ptr<Statement> parseClass();
+
+// Forward declaration for class name lookup
+extern std::unordered_set<std::string> g_class_names;
 
 // Helper to format error messages with line/column
 static std::string errorMsg(const std::string& msg, const Token& token) {
@@ -65,26 +70,51 @@ static std::unique_ptr<Expr> parsePrimary() {
         //     return std::make_unique<UnaryExpr>(TokenType::NOT, parsePrimary());
         case TokenType::IDENTIFIER: {
             std::string name = token.value;
-            if (match(TokenType::LPAREN)) {
-                std::vector<std::unique_ptr<Expr>> args;
-                if (!match(TokenType::RPAREN)) {
-                    do {
-                        args.push_back(parseExpression());
-                    } while (match(TokenType::COMMA));
-                    if (!match(TokenType::RPAREN)) {
-                        throw std::runtime_error(errorMsg("Expected ')' after arguments to function call", peek()));
-                    }
-                }
-                return std::make_unique<CallExpr>(name, std::move(args));
-            }
-            // Array access: arr[expr]
+            std::unique_ptr<Expr> expr = std::make_unique<Variable>(name);
+            // Handle array access
             if (match(TokenType::LBRACKET)) {
                 auto index = parseExpression();
                 if (!match(TokenType::RBRACKET))
                     throw std::runtime_error(errorMsg("Expected ']' after array index", peek()));
-                return std::make_unique<ArrayAccess>(name, std::move(index));
+                expr = std::make_unique<ArrayAccess>(name, std::move(index));
             }
-            return std::make_unique<Variable>(name);
+            // Handle member access and method calls (chained)
+            while (match(TokenType::DOT)) {
+                if (peek().type != TokenType::IDENTIFIER)
+                    throw std::runtime_error(errorMsg("Expected member name after '.'", peek()));
+                std::string member = advance().value;
+                // Check for method call
+                if (match(TokenType::LPAREN)) {
+                    std::vector<std::unique_ptr<Expr>> args;
+                    if (!match(TokenType::RPAREN)) {
+                        do {
+                            args.push_back(parseExpression());
+                        } while (match(TokenType::COMMA));
+                        if (!match(TokenType::RPAREN)) {
+                            throw std::runtime_error(errorMsg("Expected ')' after arguments to method call", peek()));
+                        }
+                    }
+                    expr = std::make_unique<ObjectMethodCall>(std::move(expr), member, std::move(args));
+                } else {
+                    expr = std::make_unique<ObjectMemberAccess>(std::move(expr), member);
+                }
+            }
+            // Handle function call on base variable (not member)
+            if (auto var = dynamic_cast<Variable*>(expr.get())) {
+                if (match(TokenType::LPAREN)) {
+                    std::vector<std::unique_ptr<Expr>> args;
+                    if (!match(TokenType::RPAREN)) {
+                        do {
+                            args.push_back(parseExpression());
+                        } while (match(TokenType::COMMA));
+                        if (!match(TokenType::RPAREN)) {
+                            throw std::runtime_error(errorMsg("Expected ')' after arguments to function call", peek()));
+                        }
+                    }
+                    expr = std::make_unique<CallExpr>(var->name, std::move(args));
+                }
+            }
+            return expr;
         }
         case TokenType::LBRACE: // Array literal
             return parseArrayLiteral();
@@ -160,6 +190,30 @@ static std::unique_ptr<Expr> parseExpression() {
     return parseBinaryExpr(0);
 }
 
+static std::unique_ptr<Expr> parseAssignable() {
+    // Parse a variable, array access, or object member access as an assignable target
+    if (peek().type == TokenType::IDENTIFIER) {
+        std::string name = advance().value;
+        std::unique_ptr<Expr> expr = std::make_unique<Variable>(name);
+        // Array access
+        if (match(TokenType::LBRACKET)) {
+            auto index = parseExpression();
+            if (!match(TokenType::RBRACKET))
+                throw std::runtime_error(errorMsg("Expected ']' after array index", peek()));
+            expr = std::make_unique<ArrayAccess>(name, std::move(index));
+        }
+        // Member access (chained)
+        while (match(TokenType::DOT)) {
+            if (peek().type != TokenType::IDENTIFIER)
+                throw std::runtime_error(errorMsg("Expected member name after '.'", peek()));
+            std::string member = advance().value;
+            expr = std::make_unique<ObjectMemberAccess>(std::move(expr), member);
+        }
+        return expr;
+    }
+    throw std::runtime_error(errorMsg("Invalid assignment target", peek()));
+}
+
 static std::unique_ptr<Statement> parseSimpleAssignment() {
     if (match(TokenType::INT) || match(TokenType::FLOAT) || match(TokenType::CHAR)) {
         TokenType varType = tokens[current - 1].type;
@@ -171,16 +225,51 @@ static std::unique_ptr<Statement> parseSimpleAssignment() {
         auto expr = parseExpression();
         return std::make_unique<Assignment>(name, std::move(expr));
     } else if (peek().type == TokenType::IDENTIFIER) {
-        std::string name = advance().value;
+        // Support assignment to object fields
+        auto lhs = parseAssignable();
         if (!match(TokenType::ASSIGN))
-            throw std::runtime_error(errorMsg("Expected '=' after variable name", peek()));
+            throw std::runtime_error(errorMsg("Expected '=' after assignment target", peek()));
         auto expr = parseExpression();
-        return std::make_unique<Assignment>(name, std::move(expr));
+        // If lhs is Variable, use its name; if ObjectMemberAccess, serialize as 'obj.field'
+        if (auto var = dynamic_cast<Variable*>(lhs.get())) {
+            return std::make_unique<Assignment>(var->name, std::move(expr));
+        } else if (auto objmem = dynamic_cast<ObjectMemberAccess*>(lhs.get())) {
+            // Serialize as 'obj.field' for codegen
+            std::string target;
+            std::vector<std::string> chain;
+            auto* cur = objmem;
+            while (cur) {
+                chain.push_back(cur->member);
+                if (auto innerVar = dynamic_cast<Variable*>(cur->object.get())) {
+                    chain.push_back(innerVar->name);
+                    break;
+                } else if (auto innerObj = dynamic_cast<ObjectMemberAccess*>(cur->object.get())) {
+                    cur = innerObj;
+                } else {
+                    throw std::runtime_error("Unsupported assignment target");
+                }
+            }
+            std::reverse(chain.begin(), chain.end());
+            for (size_t i = 0; i < chain.size(); ++i) {
+                if (i > 0) target += ".";
+                target += chain[i];
+            }
+            return std::make_unique<Assignment>(target, std::move(expr));
+        } else {
+            throw std::runtime_error("Unsupported assignment target");
+        }
     }
     throw std::runtime_error(errorMsg("Invalid assignment or expression", peek()));
 }
 
 static std::unique_ptr<Statement> parseStatement() {
+    if (match(TokenType::CLASS)) {
+        auto classDef = parseClass();
+        if (auto cd = dynamic_cast<ClassDef*>(classDef.get())) {
+            g_class_names.insert(cd->name);
+        }
+        return classDef;
+    }
     if (match(TokenType::COMEANDDO)) {
         return parseFunction();
     }
@@ -338,6 +427,61 @@ static std::unique_ptr<Statement> parseStatement() {
             throw std::runtime_error(errorMsg("Expected ';' after return", peek()));
         return std::make_unique<Return>(std::move(expr));
     }
+    // Support object instantiation: <ClassName> <var>;
+    if (peek().type == TokenType::IDENTIFIER) {
+        std::string typeName = peek().value;
+        // Check if this identifier is a known class name
+        if (g_class_names.count(typeName)) {
+            advance(); // consume type name
+            if (peek().type != TokenType::IDENTIFIER)
+                throw std::runtime_error(errorMsg("Expected variable name after class type", peek()));
+            std::string varName = advance().value;
+            if (!match(TokenType::SEMICOLON))
+                throw std::runtime_error(errorMsg("Expected ';' after object declaration", peek()));
+            std::cout << "[DEBUG][Parser] Parsed object instantiation: " << typeName << " " << varName << ";" << std::endl;
+            // Assignment node with type = class name, value = nullptr
+            return std::make_unique<Assignment>(varName, nullptr, typeName);
+        }
+    }
+    // Assignment to variable or object field: <assignable> = expr;
+    if (peek().type == TokenType::IDENTIFIER) {
+        size_t save = current;
+        auto lhs = parseAssignable();
+        if (match(TokenType::ASSIGN)) {
+            auto expr = parseExpression();
+            if (!match(TokenType::SEMICOLON))
+                throw std::runtime_error(errorMsg("Expected ';' after assignment", peek()));
+            // If lhs is Variable, use its name; if ObjectMemberAccess, serialize as 'obj.field'
+            if (auto var = dynamic_cast<Variable*>(lhs.get())) {
+                return std::make_unique<Assignment>(var->name, std::move(expr));
+            } else if (auto objmem = dynamic_cast<ObjectMemberAccess*>(lhs.get())) {
+                std::string target;
+                std::vector<std::string> chain;
+                auto* cur = objmem;
+                while (cur) {
+                    chain.push_back(cur->member);
+                    if (auto innerVar = dynamic_cast<Variable*>(cur->object.get())) {
+                        chain.push_back(innerVar->name);
+                        break;
+                    } else if (auto innerObj = dynamic_cast<ObjectMemberAccess*>(cur->object.get())) {
+                        cur = innerObj;
+                    } else {
+                        throw std::runtime_error("Unsupported assignment target");
+                    }
+                }
+                std::reverse(chain.begin(), chain.end());
+                for (size_t i = 0; i < chain.size(); ++i) {
+                    if (i > 0) target += ".";
+                    target += chain[i];
+                }
+                return std::make_unique<Assignment>(target, std::move(expr));
+            } else {
+                throw std::runtime_error("Unsupported assignment target");
+            }
+        } else {
+            current = save; // rewind if not assignment
+        }
+    }
     // Fallback: expression statement
     auto expr = parseExpression();
     if (!match(TokenType::SEMICOLON))
@@ -396,4 +540,57 @@ static std::unique_ptr<Statement> parseFunction() {
         std::move(parameters),
         std::move(bodyStmts)
     );
+}
+
+static std::unique_ptr<Statement> parseClass() {
+    if (peek().type != TokenType::IDENTIFIER)
+        throw std::runtime_error(errorMsg("Expected class name after 'class'", peek()));
+    std::string className = advance().value;
+    if (!match(TokenType::LBRACE))
+        throw std::runtime_error(errorMsg("Expected '{' after class name", peek()));
+    std::vector<std::pair<std::string, std::string>> fields;
+    std::vector<std::unique_ptr<FunctionDef>> methods;
+    while (!check(TokenType::RBRACE)) {
+        // Parse field: <type> <name>;
+        if (match(TokenType::INT) || match(TokenType::FLOAT) || match(TokenType::CHAR) || match(TokenType::BOOL) || match(TokenType::STRING_TYPE)) {
+            TokenType typeTok = tokens[current - 1].type;
+            std::string typeStr;
+            switch (typeTok) {
+                case TokenType::INT: typeStr = "int"; break;
+                case TokenType::FLOAT: typeStr = "float"; break;
+                case TokenType::CHAR: typeStr = "char"; break;
+                case TokenType::BOOL: typeStr = "bool"; break;
+                case TokenType::STRING_TYPE: typeStr = "string"; break;
+                default: typeStr = "int"; break;
+            }
+            if (peek().type != TokenType::IDENTIFIER)
+                throw std::runtime_error(errorMsg("Expected field name after type in class", peek()));
+            std::string fieldName = advance().value;
+            if (!match(TokenType::SEMICOLON))
+                throw std::runtime_error(errorMsg("Expected ';' after field declaration in class", peek()));
+            fields.emplace_back(typeStr, fieldName);
+        } else if (match(TokenType::COMEANDDO)) {
+            // Parse method (reuse function parser)
+            if (peek().type != TokenType::IDENTIFIER)
+                throw std::runtime_error(errorMsg("Expected method name after 'ComeAndDo' in class", peek()));
+            std::string methodName = advance().value;
+            if (!match(TokenType::LPAREN))
+                throw std::runtime_error(errorMsg("Expected '(' after method name", peek()));
+            auto parameters = parseParameterList();
+            if (!match(TokenType::LBRACE))
+                throw std::runtime_error(errorMsg("Expected '{' to begin method body", peek()));
+            std::vector<std::unique_ptr<Statement>> bodyStmts;
+            while (!check(TokenType::RBRACE)) {
+                bodyStmts.push_back(parseStatement());
+            }
+            if (!match(TokenType::RBRACE))
+                throw std::runtime_error(errorMsg("Expected '}' after method body", peek()));
+            methods.push_back(std::make_unique<FunctionDef>(methodName, std::move(parameters), std::move(bodyStmts)));
+        } else {
+            throw std::runtime_error(errorMsg("Unexpected token in class body", peek()));
+        }
+    }
+    if (!match(TokenType::RBRACE))
+        throw std::runtime_error(errorMsg("Expected '}' after class body", peek()));
+    return std::make_unique<ClassDef>(className, std::move(fields), std::move(methods));
 }

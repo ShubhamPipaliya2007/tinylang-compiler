@@ -168,3 +168,31 @@ struct ArrayAssignment : Statement {
         : arrayName(std::move(name)), index(std::move(idx)), value(std::move(val)) {}
 };
 
+// AST node for class definition
+struct ClassDef : Statement {
+    std::string name;
+    std::vector<std::pair<std::string, std::string>> fields; // (type, name)
+    std::vector<std::unique_ptr<FunctionDef>> methods;
+    ClassDef(std::string n,
+             std::vector<std::pair<std::string, std::string>> f,
+             std::vector<std::unique_ptr<FunctionDef>> m)
+        : name(std::move(n)), fields(std::move(f)), methods(std::move(m)) {}
+};
+
+// AST node for object member access (e.g., obj.field or obj.method())
+struct ObjectMemberAccess : Expr {
+    std::unique_ptr<Expr> object;
+    std::string member;
+    ObjectMemberAccess(std::unique_ptr<Expr> obj, std::string mem)
+        : object(std::move(obj)), member(std::move(mem)) {}
+};
+
+// AST node for object method call (e.g., obj.method(args...))
+struct ObjectMethodCall : Expr {
+    std::unique_ptr<Expr> object;
+    std::string method;
+    std::vector<std::unique_ptr<Expr>> arguments;
+    ObjectMethodCall(std::unique_ptr<Expr> obj, std::string m, std::vector<std::unique_ptr<Expr>> args)
+        : object(std::move(obj)), method(std::move(m)), arguments(std::move(args)) {}
+};
+

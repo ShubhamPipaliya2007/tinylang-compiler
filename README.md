@@ -26,6 +26,11 @@
   - Syntax highlighting for all language features, including logical and unary operators
   - Code snippets for common patterns (function, loop, print, etc.)
   - Available on the Visual Studio Marketplace
+- **OOP Support:**
+  - Class definitions with fields and methods
+  - Object instantiation (e.g., `Person p;`)
+  - Field assignment and access (e.g., `p.name = "Alice";`, `print(p.name);`)
+  - Method calls on objects (e.g., `p.greet();`)
 
 ### 🛠 Setup
 

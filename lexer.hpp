@@ -43,7 +43,9 @@ enum class TokenType {
     CHAR_LITERAL,    // char literal
     AND,             // &&
     OR,              // ||
-    NOT              // !
+    NOT,             // !
+    CLASS,           // class keyword
+    DOT,             // . operator for member access
 };
 
 
