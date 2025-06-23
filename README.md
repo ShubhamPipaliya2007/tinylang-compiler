@@ -134,6 +134,27 @@ Person p("Alice", 30);
 p.greet();
 ```
 
+#### Example: Arrays of Objects and OOP
+```tl
+class Person {
+    string name;
+    int age;
+
+    ComeAndDo greet() {
+        print("Hello, my name is " + name + ", I am " + age + " years old.");
+    }
+}
+
+Person p[2];
+p[0].name = "Alice";
+p[0].age = 30;
+p[0].greet();
+
+p[1].name = "Bob";
+p[1].age = 25;
+p[1].greet();
+```
+
 ---
 
 ### 🐞 Bugfixes & Improvements
@@ -141,3 +162,11 @@ p.greet();
 - Added support for unary NOT (`!`) and correct parsing of nested/unary expressions
 - Improved error messages for missing semicolons and parentheses
 - Parser and codegen now handle all logical operators and short-circuiting
+
+### 🆕 OOP Features (fully supported)
+- Class definitions with fields and methods
+- Object instantiation (with or without constructor arguments)
+- Field assignment and access (including on array elements)
+- Method calls on objects and object array elements
+- Arrays of objects: declare, assign, and call methods on each element
+- Constructor support: define an `init` method for initialization, called automatically on instantiation with arguments

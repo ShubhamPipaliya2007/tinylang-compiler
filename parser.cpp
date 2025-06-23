@@ -71,12 +71,13 @@ static std::unique_ptr<Expr> parsePrimary() {
         case TokenType::IDENTIFIER: {
             std::string name = token.value;
             std::unique_ptr<Expr> expr = std::make_unique<Variable>(name);
-            // Handle array access
-            if (match(TokenType::LBRACKET)) {
+            // Handle array access (possibly chained)
+            while (match(TokenType::LBRACKET)) {
                 auto index = parseExpression();
                 if (!match(TokenType::RBRACKET))
                     throw std::runtime_error(errorMsg("Expected ']' after array index", peek()));
                 expr = std::make_unique<ArrayAccess>(name, std::move(index));
+                name = ""; // Only use name for first access
             }
             // Handle member access and method calls (chained)
             while (match(TokenType::DOT)) {
@@ -195,19 +196,22 @@ static std::unique_ptr<Expr> parseAssignable() {
     if (peek().type == TokenType::IDENTIFIER) {
         std::string name = advance().value;
         std::unique_ptr<Expr> expr = std::make_unique<Variable>(name);
-        // Array access
-        if (match(TokenType::LBRACKET)) {
-            auto index = parseExpression();
-            if (!match(TokenType::RBRACKET))
-                throw std::runtime_error(errorMsg("Expected ']' after array index", peek()));
-            expr = std::make_unique<ArrayAccess>(name, std::move(index));
-        }
-        // Member access (chained)
-        while (match(TokenType::DOT)) {
-            if (peek().type != TokenType::IDENTIFIER)
-                throw std::runtime_error(errorMsg("Expected member name after '.'", peek()));
-            std::string member = advance().value;
-            expr = std::make_unique<ObjectMemberAccess>(std::move(expr), member);
+        // Support chained array and member access
+        while (true) {
+            if (match(TokenType::LBRACKET)) {
+                auto index = parseExpression();
+                if (!match(TokenType::RBRACKET))
+                    throw std::runtime_error(errorMsg("Expected ']' after array index", peek()));
+                expr = std::make_unique<ArrayAccess>(name, std::move(index));
+                name = ""; // Only use name for first access
+            } else if (match(TokenType::DOT)) {
+                if (peek().type != TokenType::IDENTIFIER)
+                    throw std::runtime_error(errorMsg("Expected member name after '.'", peek()));
+                std::string member = advance().value;
+                expr = std::make_unique<ObjectMemberAccess>(std::move(expr), member);
+            } else {
+                break;
+            }
         }
         return expr;
     }
@@ -392,21 +396,7 @@ static std::unique_ptr<Statement> parseStatement() {
             throw std::runtime_error(errorMsg("Expected ';' after declaration", peek()));
         return std::make_unique<Assignment>(name, nullptr, typeStr);
     }
-    // Array assignment: arr[expr] = expr;
-    if (peek().type == TokenType::IDENTIFIER && tokens[current + 1].type == TokenType::LBRACKET) {
-        std::string name = advance().value;
-        match(TokenType::LBRACKET);
-        auto index = parseExpression();
-        if (!match(TokenType::RBRACKET))
-            throw std::runtime_error(errorMsg("Expected ']' after array index", peek()));
-        if (!match(TokenType::ASSIGN))
-            throw std::runtime_error(errorMsg("Expected '=' after array index", peek()));
-        auto value = parseExpression();
-        if (!match(TokenType::SEMICOLON))
-            throw std::runtime_error(errorMsg("Expected ';' after array assignment", peek()));
-        return std::make_unique<ArrayAssignment>(name, std::move(index), std::move(value));
-    }
-    // Print statement (must be before fallback to expression)
+    // Print statement
     if (match(TokenType::PRINT)) {
         if (!match(TokenType::LPAREN))
             throw std::runtime_error(errorMsg("Expected '(' after print", peek()));
@@ -427,38 +417,7 @@ static std::unique_ptr<Statement> parseStatement() {
             throw std::runtime_error(errorMsg("Expected ';' after return", peek()));
         return std::make_unique<Return>(std::move(expr));
     }
-    // Support object instantiation: <ClassName> <var>(args...);
-    if (peek().type == TokenType::IDENTIFIER) {
-        std::string typeName = peek().value;
-        // Check if this identifier is a known class name
-        if (g_class_names.count(typeName)) {
-            advance(); // consume type name
-            if (peek().type != TokenType::IDENTIFIER)
-                throw std::runtime_error(errorMsg("Expected variable name after class type", peek()));
-            std::string varName = advance().value;
-            // Check for constructor arguments
-            std::vector<std::unique_ptr<Expr>> args;
-            if (match(TokenType::LPAREN)) {
-                if (!match(TokenType::RPAREN)) {
-                    do {
-                        args.push_back(parseExpression());
-                    } while (match(TokenType::COMMA));
-                    if (!match(TokenType::RPAREN))
-                        throw std::runtime_error(errorMsg("Expected ')' after constructor arguments", peek()));
-                }
-            }
-            if (!match(TokenType::SEMICOLON))
-                throw std::runtime_error(errorMsg("Expected ';' after object declaration", peek()));
-            if (!args.empty()) {
-                std::cout << "[DEBUG][Parser] Parsed object instantiation with constructor: " << typeName << " " << varName << "(...)" << std::endl;
-                return std::make_unique<ObjectInstantiation>(typeName, varName, std::move(args));
-            } else {
-                std::cout << "[DEBUG][Parser] Parsed object instantiation: " << typeName << " " << varName << ";" << std::endl;
-                return std::make_unique<Assignment>(varName, nullptr, typeName);
-            }
-        }
-    }
-    // Assignment to variable or object field: <assignable> = expr;
+    // Assignment to variable, array, or object field: <assignable> = expr;
     if (peek().type == TokenType::IDENTIFIER) {
         size_t save = current;
         auto lhs = parseAssignable();
@@ -466,10 +425,11 @@ static std::unique_ptr<Statement> parseStatement() {
             auto expr = parseExpression();
             if (!match(TokenType::SEMICOLON))
                 throw std::runtime_error(errorMsg("Expected ';' after assignment", peek()));
-            // If lhs is Variable, use its name; if ObjectMemberAccess, serialize as 'obj.field'
+            // If lhs is Variable, use its name; if ObjectMemberAccess or ArrayAccess, serialize as needed
             if (auto var = dynamic_cast<Variable*>(lhs.get())) {
                 return std::make_unique<Assignment>(var->name, std::move(expr));
             } else if (auto objmem = dynamic_cast<ObjectMemberAccess*>(lhs.get())) {
+                // Serialize as 'obj.field' or 'arr[idx].field'
                 std::string target;
                 std::vector<std::string> chain;
                 auto* cur = objmem;
@@ -477,6 +437,18 @@ static std::unique_ptr<Statement> parseStatement() {
                     chain.push_back(cur->member);
                     if (auto innerVar = dynamic_cast<Variable*>(cur->object.get())) {
                         chain.push_back(innerVar->name);
+                        break;
+                    } else if (auto innerArr = dynamic_cast<ArrayAccess*>(cur->object.get())) {
+                        // Serialize array access as arr[idx]
+                        std::string arrTarget = innerArr->arrayName + "[";
+                        if (auto num = dynamic_cast<Number*>(innerArr->index.get())) {
+                            arrTarget += std::to_string(num->value);
+                        } else {
+                            // For now, only support constant index
+                            throw std::runtime_error("Only constant indices supported in assignment target");
+                        }
+                        arrTarget += "]";
+                        chain.push_back(arrTarget);
                         break;
                     } else if (auto innerObj = dynamic_cast<ObjectMemberAccess*>(cur->object.get())) {
                         cur = innerObj;
@@ -490,11 +462,59 @@ static std::unique_ptr<Statement> parseStatement() {
                     target += chain[i];
                 }
                 return std::make_unique<Assignment>(target, std::move(expr));
+            } else if (auto arr = dynamic_cast<ArrayAccess*>(lhs.get())) {
+                // Serialize as arr[idx]
+                std::string target = arr->arrayName + "[";
+                if (auto num = dynamic_cast<Number*>(arr->index.get()))
+                    target += std::to_string(num->value);
+                else
+                    target += "?"; // fallback for non-const index
+                target += "]";
+                return std::make_unique<Assignment>(target, std::move(expr));
             } else {
                 throw std::runtime_error("Unsupported assignment target");
             }
         } else {
             current = save; // rewind if not assignment
+        }
+    }
+    // Object array declaration: <ClassName> <var>[<size>];
+    if (peek().type == TokenType::IDENTIFIER) {
+        std::string typeName = peek().value;
+        if (g_class_names.count(typeName)) {
+            advance(); // consume type name
+            if (peek().type != TokenType::IDENTIFIER)
+                throw std::runtime_error(errorMsg("Expected variable name after class type", peek()));
+            std::string varName = advance().value;
+            if (match(TokenType::LBRACKET)) {
+                auto sizeExpr = parseExpression();
+                if (!match(TokenType::RBRACKET))
+                    throw std::runtime_error(errorMsg("Expected ']' after array size", peek()));
+                if (match(TokenType::SEMICOLON)) {
+                    // Object array declaration
+                    return std::make_unique<Assignment>(varName, std::move(sizeExpr), typeName + "[]");
+                } else {
+                    throw std::runtime_error(errorMsg("Expected ';' after object array declaration", peek()));
+                }
+            }
+            // ... existing constructor and default instantiation logic ...
+            std::vector<std::unique_ptr<Expr>> args;
+            if (match(TokenType::LPAREN)) {
+                if (!match(TokenType::RPAREN)) {
+                    do {
+                        args.push_back(parseExpression());
+                    } while (match(TokenType::COMMA));
+                    if (!match(TokenType::RPAREN))
+                        throw std::runtime_error(errorMsg("Expected ')' after constructor arguments", peek()));
+                }
+            }
+            if (!match(TokenType::SEMICOLON))
+                throw std::runtime_error(errorMsg("Expected ';' after object declaration", peek()));
+            if (!args.empty()) {
+                return std::make_unique<ObjectInstantiation>(typeName, varName, std::move(args));
+            } else {
+                return std::make_unique<Assignment>(varName, nullptr, typeName);
+            }
         }
     }
     // Fallback: expression statement
