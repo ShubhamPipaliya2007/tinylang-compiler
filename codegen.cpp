@@ -5,6 +5,41 @@
 #include <vector>
 #include <string>
 #include <variant>
+#include <algorithm>
+
+std::unordered_map<std::string, const ClassDef*> class_defs;
+// Helper: Recursively collect all fields from base classes
+static void collectFields(const ClassDef* classDef, std::vector<std::pair<std::string, std::string>>& outFields) {
+    if (!classDef->baseClass.empty()) {
+        if (!class_defs.count(classDef->baseClass)) {
+            throw std::runtime_error("Base class not found: " + classDef->baseClass);
+        }
+        collectFields(class_defs[classDef->baseClass], outFields);
+    }
+    // Add/override fields from this class
+    for (const auto& field : classDef->fields) {
+        // If already present, override
+        auto it = std::find_if(outFields.begin(), outFields.end(), [&](const auto& f) { return f.second == field.second; });
+        if (it != outFields.end()) *it = field;
+        else outFields.push_back(field);
+    }
+}
+
+// Helper: Recursively collect all methods from base classes
+static void collectMethods(const ClassDef* classDef, std::vector<const FunctionDef*>& outMethods) {
+    if (!classDef->baseClass.empty()) {
+        if (!class_defs.count(classDef->baseClass)) {
+            throw std::runtime_error("Base class not found: " + classDef->baseClass);
+        }
+        collectMethods(class_defs[classDef->baseClass], outMethods);
+    }
+    // Add/override methods from this class
+    for (const auto& method : classDef->methods) {
+        auto it = std::find_if(outMethods.begin(), outMethods.end(), [&](const FunctionDef* m) { return m->name == method->name; });
+        if (it != outMethods.end()) *it = method.get();
+        else outMethods.push_back(method.get());
+    }
+}
 
 static std::vector<std::unordered_map<std::string, int>> variables_stack{ { } };
 static std::vector<std::unordered_map<std::string, double>> float_variables_stack{ { } };
@@ -23,7 +58,6 @@ struct ObjectInstance {
     std::unordered_map<std::string, std::variant<int, double, char, std::string>> fields;
 };
 
-static std::unordered_map<std::string, const ClassDef*> class_defs;
 static std::unordered_map<std::string, ObjectInstance> objects;
 
 // Add storage for object arrays
@@ -327,9 +361,11 @@ Value evalExpr(const Expr* expr) {
                 const ClassDef* classDef = class_defs.at(inst.className);
                 // Find the method
                 const FunctionDef* method = nullptr;
-                for (const auto& m : classDef->methods) {
+                std::vector<const FunctionDef*> allMethods;
+                collectMethods(classDef, allMethods);
+                for (const auto& m : allMethods) {
                     if (m->name == objMethod->method) {
-                        method = m.get();
+                        method = m;
                         break;
                     }
                 }
@@ -379,6 +415,69 @@ Value evalExpr(const Expr* expr) {
                 if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
                 if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
                 return Value(returnValue);
+            } else {
+                // Single object instance
+                if (!objects.count(objName)) throw std::runtime_error("Undefined object: " + objName);
+                ObjectInstance& inst = objects[objName];
+                // Find the class definition
+                if (!class_defs.count(inst.className)) throw std::runtime_error("Class not found: " + inst.className);
+                const ClassDef* classDef = class_defs.at(inst.className);
+                // Find the method (search inheritance chain)
+                const FunctionDef* method = nullptr;
+                std::vector<const FunctionDef*> allMethods;
+                collectMethods(classDef, allMethods);
+                for (const auto& m : allMethods) {
+                    if (m->name == objMethod->method) {
+                        method = m;
+                        break;
+                    }
+                }
+                if (!method) throw std::runtime_error("Method not found: " + objMethod->method + " in class " + inst.className);
+                if (objMethod->arguments.size() != method->parameters.size())
+                    throw std::runtime_error("Argument count mismatch in call to method " + objMethod->method);
+                // Push new local scopes
+                variables_stack.push_back({});
+                float_variables_stack.push_back({});
+                char_variables_stack.push_back({});
+                string_variables_stack.push_back({});
+                // Set up fields as locals
+                for (const auto& field : inst.fields) {
+                    if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
+                    else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
+                    else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
+                    else if (std::holds_alternative<std::string>(field.second)) setStringVar(field.first, std::get<std::string>(field.second));
+                }
+                // Set up parameters
+                for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
+                    Value argVal = evalExpr(objMethod->arguments[i].get());
+                    if (argVal.type == ValueType::FLOAT) setFloatVar(method->parameters[i], argVal.f);
+                    else if (argVal.type == ValueType::CHAR) setCharVar(method->parameters[i], argVal.c);
+                    else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
+                    else setIntVar(method->parameters[i], argVal.i);
+                }
+                int returnValue = 0;
+                for (const auto& stmt : method->body) {
+                    if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
+                        returnValue = evalExpr(ret->value.get()).i;
+                        break;
+                    } else {
+                        execute(stmt.get());
+                    }
+                }
+                // Update fields from local scope after method call
+                for (auto& field : inst.fields) {
+                    const std::string& fname = field.first;
+                    if (string_variables_stack.back().count(fname)) field.second = string_variables_stack.back()[fname];
+                    else if (variables_stack.back().count(fname)) field.second = variables_stack.back()[fname];
+                    else if (float_variables_stack.back().count(fname)) field.second = float_variables_stack.back()[fname];
+                    else if (char_variables_stack.back().count(fname)) field.second = char_variables_stack.back()[fname];
+                }
+                // Pop local scopes
+                if (variables_stack.size() > 1) variables_stack.pop_back();
+                if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
+                if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
+                if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
+                return Value(returnValue);
             }
         } else if (auto arr = dynamic_cast<const ArrayAccess*>(objMethod->object.get())) {
             // Handle p[0].greet() where object is ArrayAccess
@@ -392,9 +491,11 @@ Value evalExpr(const Expr* expr) {
             const ClassDef* classDef = class_defs.at(inst.className);
             // Find the method
             const FunctionDef* method = nullptr;
-            for (const auto& m : classDef->methods) {
+            std::vector<const FunctionDef*> allMethods;
+            collectMethods(classDef, allMethods);
+            for (const auto& m : allMethods) {
                 if (m->name == objMethod->method) {
-                    method = m.get();
+                    method = m;
                     break;
                 }
             }
@@ -624,7 +725,10 @@ void execute(const Statement* stmt) {
         // Create the object instance
         ObjectInstance inst;
         inst.className = objinst->className;
-        for (const auto& field : class_defs[objinst->className]->fields) {
+        const ClassDef* classDef = class_defs[objinst->className];
+        std::vector<std::pair<std::string, std::string>> allFields;
+        collectFields(classDef, allFields);
+        for (const auto& field : allFields) {
             if (field.first == "int") inst.fields[field.second] = 0;
             else if (field.first == "float") inst.fields[field.second] = 0.0;
             else if (field.first == "char") inst.fields[field.second] = '\0';
@@ -634,10 +738,11 @@ void execute(const Statement* stmt) {
         objects[objinst->varName] = inst;
         // Call constructor (init method) if arguments are provided
         if (!objinst->arguments.empty()) {
-            const ClassDef* classDef = class_defs[objinst->className];
             const FunctionDef* ctor = nullptr;
-            for (const auto& m : classDef->methods) {
-                if (m->name == "init") { ctor = m.get(); break; }
+            std::vector<const FunctionDef*> allMethods;
+            collectMethods(classDef, allMethods);
+            for (const auto& m : allMethods) {
+                if (m->name == "init") { ctor = m; break; }
             }
             if (!ctor) throw std::runtime_error("Constructor 'init' not found in class " + objinst->className);
             if (objinst->arguments.size() != ctor->parameters.size())

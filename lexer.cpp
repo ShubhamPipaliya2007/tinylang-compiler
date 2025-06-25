@@ -183,6 +183,7 @@ std::vector<Token> tokenize(const std::string& input) {
                     }
                     break;
                 case '.': type = TokenType::DOT; val = "."; break;
+                case ':': type = TokenType::COLON; val = ":"; break;
                 default:
                     std::cerr << "Unknown character: " << c << " at line " << line << ", column " << col << "\n";
                     valid = false;

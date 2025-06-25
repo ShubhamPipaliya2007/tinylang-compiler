@@ -585,6 +585,12 @@ static std::unique_ptr<Statement> parseClass() {
     if (peek().type != TokenType::IDENTIFIER)
         throw std::runtime_error(errorMsg("Expected class name after 'class'", peek()));
     std::string className = advance().value;
+    std::string baseClass;
+    if (match(TokenType::COLON)) {
+        if (peek().type != TokenType::IDENTIFIER)
+            throw std::runtime_error(errorMsg("Expected base class name after ':'", peek()));
+        baseClass = advance().value;
+    }
     if (!match(TokenType::LBRACE))
         throw std::runtime_error(errorMsg("Expected '{' after class name", peek()));
     std::vector<std::pair<std::string, std::string>> fields;
@@ -631,5 +637,5 @@ static std::unique_ptr<Statement> parseClass() {
     }
     if (!match(TokenType::RBRACE))
         throw std::runtime_error(errorMsg("Expected '}' after class body", peek()));
-    return std::make_unique<ClassDef>(className, std::move(fields), std::move(methods));
+    return std::make_unique<ClassDef>(className, baseClass, std::move(fields), std::move(methods));
 }

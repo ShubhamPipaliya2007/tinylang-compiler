@@ -171,12 +171,14 @@ struct ArrayAssignment : Statement {
 // AST node for class definition
 struct ClassDef : Statement {
     std::string name;
+    std::string baseClass; // empty if no inheritance
     std::vector<std::pair<std::string, std::string>> fields; // (type, name)
     std::vector<std::unique_ptr<FunctionDef>> methods;
     ClassDef(std::string n,
+             std::string base,
              std::vector<std::pair<std::string, std::string>> f,
              std::vector<std::unique_ptr<FunctionDef>> m)
-        : name(std::move(n)), fields(std::move(f)), methods(std::move(m)) {}
+        : name(std::move(n)), baseClass(std::move(base)), fields(std::move(f)), methods(std::move(m)) {}
 };
 
 // AST node for object member access (e.g., obj.field or obj.method())
