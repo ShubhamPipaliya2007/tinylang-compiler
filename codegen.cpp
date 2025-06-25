@@ -139,6 +139,9 @@ void setStringVar(const std::string& name, const std::string& value) {
     string_variables_stack.back()[name] = value;
 }
 
+// Track the current class context for super calls
+static std::vector<std::string> current_class_stack;
+
 Value evalExpr(const Expr* expr) {
     if (auto num = dynamic_cast<const Number*>(expr)) {
         return Value(num->value);
@@ -349,6 +352,84 @@ Value evalExpr(const Expr* expr) {
         // Support method call on object array element
         if (auto var = dynamic_cast<const Variable*>(objMethod->object.get())) {
             std::string objName = var->name;
+            if (objName == "super") {
+                // super.method() -- call method from base class of current class
+                if (current_class_stack.empty()) throw std::runtime_error("'super' used outside of class method");
+                std::string thisClass = current_class_stack.back();
+                if (!class_defs.count(thisClass)) throw std::runtime_error("Current class not found: " + thisClass);
+                const ClassDef* thisDef = class_defs.at(thisClass);
+                if (thisDef->baseClass.empty()) throw std::runtime_error("Class '" + thisClass + "' has no base class for 'super'");
+                const ClassDef* baseDef = class_defs.at(thisDef->baseClass);
+                // Find the method in the base class chain
+                const FunctionDef* method = nullptr;
+                std::vector<const FunctionDef*> allMethods;
+                collectMethods(baseDef, allMethods);
+                for (const auto& m : allMethods) {
+                    if (m->name == objMethod->method) {
+                        method = m;
+                        break;
+                    }
+                }
+                if (!method) throw std::runtime_error("Method '" + objMethod->method + "' not found in base class '" + baseDef->name + "'");
+                if (objMethod->arguments.size() != method->parameters.size())
+                    throw std::runtime_error("Argument count mismatch in call to base method '" + objMethod->method + "'");
+                // Push new local scopes
+                variables_stack.push_back({});
+                float_variables_stack.push_back({});
+                char_variables_stack.push_back({});
+                string_variables_stack.push_back({});
+                // Set up fields as locals (from the current object)
+                // Find the current object instance (from the previous stack frame)
+                // We'll assume the object is named 'this' in the local scope
+                // (You can enhance this to be more robust if needed)
+                // For now, just use the first object in 'objects' (not thread-safe, but works for single-threaded)
+                ObjectInstance* inst = nullptr;
+                if (!objects.empty()) inst = &objects.begin()->second;
+                if (inst) {
+                    for (const auto& field : inst->fields) {
+                        if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
+                        else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
+                        else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
+                        else if (std::holds_alternative<std::string>(field.second)) setStringVar(field.first, std::get<std::string>(field.second));
+                    }
+                }
+                // Set up parameters
+                for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
+                    Value argVal = evalExpr(objMethod->arguments[i].get());
+                    if (argVal.type == ValueType::FLOAT) setFloatVar(method->parameters[i], argVal.f);
+                    else if (argVal.type == ValueType::CHAR) setCharVar(method->parameters[i], argVal.c);
+                    else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
+                    else setIntVar(method->parameters[i], argVal.i);
+                }
+                // Track class context
+                current_class_stack.push_back(baseDef->name);
+                int returnValue = 0;
+                for (const auto& stmt : method->body) {
+                    if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
+                        returnValue = evalExpr(ret->value.get()).i;
+                        break;
+                    } else {
+                        execute(stmt.get());
+                    }
+                }
+                current_class_stack.pop_back();
+                // Update fields from local scope after method call
+                if (inst) {
+                    for (auto& field : inst->fields) {
+                        const std::string& fname = field.first;
+                        if (string_variables_stack.back().count(fname)) field.second = string_variables_stack.back()[fname];
+                        else if (variables_stack.back().count(fname)) field.second = variables_stack.back()[fname];
+                        else if (float_variables_stack.back().count(fname)) field.second = float_variables_stack.back()[fname];
+                        else if (char_variables_stack.back().count(fname)) field.second = char_variables_stack.back()[fname];
+                    }
+                }
+                // Pop local scopes
+                if (variables_stack.size() > 1) variables_stack.pop_back();
+                if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
+                if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
+                if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
+                return Value(returnValue);
+            }
             size_t lb = objName.find('[');
             size_t rb = objName.find(']');
             if (lb != std::string::npos && rb != std::string::npos && rb > lb) {
@@ -392,6 +473,7 @@ Value evalExpr(const Expr* expr) {
                     else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
                     else setIntVar(method->parameters[i], argVal.i);
                 }
+                current_class_stack.push_back(classDef->name);
                 int returnValue = 0;
                 for (const auto& stmt : method->body) {
                     if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
@@ -401,6 +483,7 @@ Value evalExpr(const Expr* expr) {
                         execute(stmt.get());
                     }
                 }
+                current_class_stack.pop_back();
                 // Update fields from local scope after method call
                 for (auto& field : class_defs[inst.className]->fields) {
                     const std::string& fname = field.second;
@@ -455,6 +538,7 @@ Value evalExpr(const Expr* expr) {
                     else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
                     else setIntVar(method->parameters[i], argVal.i);
                 }
+                current_class_stack.push_back(classDef->name);
                 int returnValue = 0;
                 for (const auto& stmt : method->body) {
                     if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
@@ -464,6 +548,7 @@ Value evalExpr(const Expr* expr) {
                         execute(stmt.get());
                     }
                 }
+                current_class_stack.pop_back();
                 // Update fields from local scope after method call
                 for (auto& field : inst.fields) {
                     const std::string& fname = field.first;
@@ -522,6 +607,7 @@ Value evalExpr(const Expr* expr) {
                 else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
                 else setIntVar(method->parameters[i], argVal.i);
             }
+            current_class_stack.push_back(classDef->name);
             int returnValue = 0;
             for (const auto& stmt : method->body) {
                 if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
@@ -531,6 +617,7 @@ Value evalExpr(const Expr* expr) {
                     execute(stmt.get());
                 }
             }
+            current_class_stack.pop_back();
             // Update fields from local scope after method call
             for (auto& field : class_defs[inst.className]->fields) {
                 const std::string& fname = field.second;
@@ -768,9 +855,11 @@ void execute(const Statement* stmt) {
                 else setIntVar(ctor->parameters[i], argVal.i);
             }
             // Execute constructor body
+            current_class_stack.push_back(classDef->name);
             for (const auto& stmt : ctor->body) {
                 execute(stmt.get());
             }
+            current_class_stack.pop_back();
             // Update fields from local scope after constructor
             for (auto& field : class_defs[objinst->className]->fields) {
                 const std::string& fname = field.second;

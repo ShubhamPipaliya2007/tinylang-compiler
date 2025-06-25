@@ -12,6 +12,7 @@ class Student : Person {
     int studentId;
     ComeAndDo greet() {
         print("Hi, I'm student " + name + " (ID: " + studentId + ")");
+        super.greet();
     }
 }
 
