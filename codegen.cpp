@@ -142,6 +142,9 @@ void setStringVar(const std::string& name, const std::string& value) {
 // Track the current class context for super calls
 static std::vector<std::string> current_class_stack;
 
+// In evalExpr, handle ObjectMemberAccess for 'this'
+static std::vector<ObjectInstance*> current_object_stack;
+
 Value evalExpr(const Expr* expr) {
     if (auto num = dynamic_cast<const Number*>(expr)) {
         return Value(num->value);
@@ -310,17 +313,36 @@ Value evalExpr(const Expr* expr) {
         throw std::runtime_error("ArrayLiteral should not be evaluated directly");
     }
     else if (auto objAccess = dynamic_cast<const ObjectMemberAccess*>(expr)) {
-        // Support member access on object arrays
         if (auto var = dynamic_cast<const Variable*>(objAccess->object.get())) {
-            std::string objName = var->name;
-            // Check for object array element proxy
-            size_t lb = objName.find('[');
-            size_t rb = objName.find(']');
+            if (var->name == "this") {
+                if (current_object_stack.empty() || !current_object_stack.back()) throw std::runtime_error("'this' used outside of class method");
+                ObjectInstance* inst = current_object_stack.back();
+                if (inst->fields.count(objAccess->member)) {
+                    const auto& val = inst->fields.at(objAccess->member);
+                    if (std::holds_alternative<int>(val)) return Value(std::get<int>(val));
+                    if (std::holds_alternative<double>(val)) return Value(std::get<double>(val));
+                    if (std::holds_alternative<char>(val)) return Value(std::get<char>(val));
+                    if (std::holds_alternative<std::string>(val)) return Value(std::get<std::string>(val));
+                    throw std::runtime_error("Unsupported field type");
+                }
+                throw std::runtime_error("Field not found in 'this' object");
+            }
+            if (var->name == "super") {
+                throw std::runtime_error("Direct field access on 'super' is not supported. Use 'super.method()'.");
+            }
+            // fallback: generic object field access
+        }
+        // Fallback: handle proxy Value from array access (e.g., p[0].field)
+        if (auto arrVar = dynamic_cast<const Variable*>(objAccess->object.get())) {
+            std::string name = arrVar->name;
+            size_t lb = name.find('[');
+            size_t rb = name.find(']');
             if (lb != std::string::npos && rb != std::string::npos && rb > lb) {
-                std::string arrName = objName.substr(0, lb);
-                int idx = std::stoi(objName.substr(lb+1, rb-lb-1));
+                std::string arrName = name.substr(0, lb);
+                int idx = std::stoi(name.substr(lb+1, rb-lb-1));
                 if (!object_arrays.count(arrName)) throw std::runtime_error("Undefined object array: " + arrName);
-                const ObjectInstance& inst = object_arrays[arrName].at(idx);
+                if (idx < 0 || idx >= (int)object_arrays[arrName].size()) throw std::runtime_error("Object array index out of bounds: " + std::to_string(idx));
+                ObjectInstance& inst = object_arrays[arrName][idx];
                 if (inst.fields.count(objAccess->member)) {
                     const auto& val = inst.fields.at(objAccess->member);
                     if (std::holds_alternative<int>(val)) return Value(std::get<int>(val));
@@ -331,29 +353,13 @@ Value evalExpr(const Expr* expr) {
                 }
                 throw std::runtime_error("Field not found in object array element");
             }
-            // Evaluate the object expression to get the variable name
-            if (!objects.count(objName)) throw std::runtime_error("Undefined object: " + objName);
-            const ObjectInstance& inst = objects.at(objName);
-            // Field access
-            if (inst.fields.count(objAccess->member)) {
-                const auto& val = inst.fields.at(objAccess->member);
-                if (std::holds_alternative<int>(val)) return Value(std::get<int>(val));
-                if (std::holds_alternative<double>(val)) return Value(std::get<double>(val));
-                if (std::holds_alternative<char>(val)) return Value(std::get<char>(val));
-                if (std::holds_alternative<std::string>(val)) return Value(std::get<std::string>(val));
-                throw std::runtime_error("Unsupported field type");
-            }
-            // Method access (not yet implemented)
-            throw std::runtime_error("Method calls on objects not yet implemented");
         }
         throw std::runtime_error("Unsupported object member access");
     }
     else if (auto objMethod = dynamic_cast<const ObjectMethodCall*>(expr)) {
-        // Support method call on object array element
+        // Robust fallback: always check for Variable('super') or Variable('this')
         if (auto var = dynamic_cast<const Variable*>(objMethod->object.get())) {
-            std::string objName = var->name;
-            if (objName == "super") {
-                // super.method() -- call method from base class of current class
+            if (var->name == "super") {
                 if (current_class_stack.empty()) throw std::runtime_error("'super' used outside of class method");
                 std::string thisClass = current_class_stack.back();
                 if (!class_defs.count(thisClass)) throw std::runtime_error("Current class not found: " + thisClass);
@@ -379,12 +385,8 @@ Value evalExpr(const Expr* expr) {
                 char_variables_stack.push_back({});
                 string_variables_stack.push_back({});
                 // Set up fields as locals (from the current object)
-                // Find the current object instance (from the previous stack frame)
-                // We'll assume the object is named 'this' in the local scope
-                // (You can enhance this to be more robust if needed)
-                // For now, just use the first object in 'objects' (not thread-safe, but works for single-threaded)
                 ObjectInstance* inst = nullptr;
-                if (!objects.empty()) inst = &objects.begin()->second;
+                if (!current_object_stack.empty()) inst = current_object_stack.back();
                 if (inst) {
                     for (const auto& field : inst->fields) {
                         if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
@@ -401,8 +403,8 @@ Value evalExpr(const Expr* expr) {
                     else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
                     else setIntVar(method->parameters[i], argVal.i);
                 }
-                // Track class context
                 current_class_stack.push_back(baseDef->name);
+                current_object_stack.push_back(inst);
                 int returnValue = 0;
                 for (const auto& stmt : method->body) {
                     if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
@@ -413,6 +415,7 @@ Value evalExpr(const Expr* expr) {
                     }
                 }
                 current_class_stack.pop_back();
+                current_object_stack.pop_back();
                 // Update fields from local scope after method call
                 if (inst) {
                     for (auto& field : inst->fields) {
@@ -429,82 +432,12 @@ Value evalExpr(const Expr* expr) {
                 if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
                 if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
                 return Value(returnValue);
-            }
-            size_t lb = objName.find('[');
-            size_t rb = objName.find(']');
-            if (lb != std::string::npos && rb != std::string::npos && rb > lb) {
-                std::string arrName = objName.substr(0, lb);
-                int idx = std::stoi(objName.substr(lb+1, rb-lb-1));
-                if (!object_arrays.count(arrName)) throw std::runtime_error("Undefined object array: " + arrName);
-                ObjectInstance& inst = object_arrays[arrName].at(idx);
+            } else if (var->name == "this") {
+                if (current_object_stack.empty() || !current_object_stack.back()) throw std::runtime_error("'this' used outside of class method");
+                ObjectInstance* inst = current_object_stack.back();
                 // Find the class definition
-                if (!class_defs.count(inst.className)) throw std::runtime_error("Class not found: " + inst.className);
-                const ClassDef* classDef = class_defs.at(inst.className);
-                // Find the method
-                const FunctionDef* method = nullptr;
-                std::vector<const FunctionDef*> allMethods;
-                collectMethods(classDef, allMethods);
-                for (const auto& m : allMethods) {
-                    if (m->name == objMethod->method) {
-                        method = m;
-                        break;
-                    }
-                }
-                if (!method) throw std::runtime_error("Method not found: " + objMethod->method + " in class " + inst.className);
-                if (objMethod->arguments.size() != method->parameters.size())
-                    throw std::runtime_error("Argument count mismatch in call to method " + objMethod->method);
-                // Push new local scopes
-                variables_stack.push_back({});
-                float_variables_stack.push_back({});
-                char_variables_stack.push_back({});
-                string_variables_stack.push_back({});
-                // Set up fields as locals
-                for (const auto& field : inst.fields) {
-                    if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
-                    else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
-                    else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
-                    else if (std::holds_alternative<std::string>(field.second)) setStringVar(field.first, std::get<std::string>(field.second));
-                }
-                // Set up parameters
-                for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
-                    Value argVal = evalExpr(objMethod->arguments[i].get());
-                    if (argVal.type == ValueType::FLOAT) setFloatVar(method->parameters[i], argVal.f);
-                    else if (argVal.type == ValueType::CHAR) setCharVar(method->parameters[i], argVal.c);
-                    else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
-                    else setIntVar(method->parameters[i], argVal.i);
-                }
-                current_class_stack.push_back(classDef->name);
-                int returnValue = 0;
-                for (const auto& stmt : method->body) {
-                    if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
-                        returnValue = evalExpr(ret->value.get()).i;
-                        break;
-                    } else {
-                        execute(stmt.get());
-                    }
-                }
-                current_class_stack.pop_back();
-                // Update fields from local scope after method call
-                for (auto& field : class_defs[inst.className]->fields) {
-                    const std::string& fname = field.second;
-                    if (string_variables_stack.back().count(fname)) inst.fields[fname] = string_variables_stack.back()[fname];
-                    else if (variables_stack.back().count(fname)) inst.fields[fname] = variables_stack.back()[fname];
-                    else if (float_variables_stack.back().count(fname)) inst.fields[fname] = float_variables_stack.back()[fname];
-                    else if (char_variables_stack.back().count(fname)) inst.fields[fname] = char_variables_stack.back()[fname];
-                }
-                // Pop local scopes
-                if (variables_stack.size() > 1) variables_stack.pop_back();
-                if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
-                if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
-                if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
-                return Value(returnValue);
-            } else {
-                // Single object instance
-                if (!objects.count(objName)) throw std::runtime_error("Undefined object: " + objName);
-                ObjectInstance& inst = objects[objName];
-                // Find the class definition
-                if (!class_defs.count(inst.className)) throw std::runtime_error("Class not found: " + inst.className);
-                const ClassDef* classDef = class_defs.at(inst.className);
+                if (!class_defs.count(inst->className)) throw std::runtime_error("Class not found: " + inst->className);
+                const ClassDef* classDef = class_defs.at(inst->className);
                 // Find the method (search inheritance chain)
                 const FunctionDef* method = nullptr;
                 std::vector<const FunctionDef*> allMethods;
@@ -515,7 +448,7 @@ Value evalExpr(const Expr* expr) {
                         break;
                     }
                 }
-                if (!method) throw std::runtime_error("Method not found: " + objMethod->method + " in class " + inst.className);
+                if (!method) throw std::runtime_error("Method not found: " + objMethod->method + " in class " + inst->className);
                 if (objMethod->arguments.size() != method->parameters.size())
                     throw std::runtime_error("Argument count mismatch in call to method " + objMethod->method);
                 // Push new local scopes
@@ -524,7 +457,7 @@ Value evalExpr(const Expr* expr) {
                 char_variables_stack.push_back({});
                 string_variables_stack.push_back({});
                 // Set up fields as locals
-                for (const auto& field : inst.fields) {
+                for (const auto& field : inst->fields) {
                     if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
                     else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
                     else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
@@ -538,7 +471,9 @@ Value evalExpr(const Expr* expr) {
                     else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
                     else setIntVar(method->parameters[i], argVal.i);
                 }
+                // Track class and object context
                 current_class_stack.push_back(classDef->name);
+                current_object_stack.push_back(inst);
                 int returnValue = 0;
                 for (const auto& stmt : method->body) {
                     if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
@@ -549,8 +484,9 @@ Value evalExpr(const Expr* expr) {
                     }
                 }
                 current_class_stack.pop_back();
+                current_object_stack.pop_back();
                 // Update fields from local scope after method call
-                for (auto& field : inst.fields) {
+                for (auto& field : inst->fields) {
                     const std::string& fname = field.first;
                     if (string_variables_stack.back().count(fname)) field.second = string_variables_stack.back()[fname];
                     else if (variables_stack.back().count(fname)) field.second = variables_stack.back()[fname];
@@ -564,76 +500,96 @@ Value evalExpr(const Expr* expr) {
                 if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
                 return Value(returnValue);
             }
-        } else if (auto arr = dynamic_cast<const ArrayAccess*>(objMethod->object.get())) {
-            // Handle p[0].greet() where object is ArrayAccess
-            std::string arrName = arr->arrayName;
-            Value idxVal = evalExpr(arr->index.get());
-            int idx = idxVal.i;
-            if (!object_arrays.count(arrName)) throw std::runtime_error("Undefined object array: " + arrName);
-            ObjectInstance& inst = object_arrays[arrName].at(idx);
-            // Find the class definition
-            if (!class_defs.count(inst.className)) throw std::runtime_error("Class not found: " + inst.className);
-            const ClassDef* classDef = class_defs.at(inst.className);
-            // Find the method
-            const FunctionDef* method = nullptr;
-            std::vector<const FunctionDef*> allMethods;
-            collectMethods(classDef, allMethods);
-            for (const auto& m : allMethods) {
-                if (m->name == objMethod->method) {
-                    method = m;
-                    break;
-                }
-            }
-            if (!method) throw std::runtime_error("Method not found: " + objMethod->method + " in class " + inst.className);
-            if (objMethod->arguments.size() != method->parameters.size())
-                throw std::runtime_error("Argument count mismatch in call to method " + objMethod->method);
-            // Push new local scopes
-            variables_stack.push_back({});
-            float_variables_stack.push_back({});
-            char_variables_stack.push_back({});
-            string_variables_stack.push_back({});
-            // Set up fields as locals
-            for (const auto& field : inst.fields) {
-                if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
-                else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
-                else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
-                else if (std::holds_alternative<std::string>(field.second)) setStringVar(field.first, std::get<std::string>(field.second));
-            }
-            // Set up parameters
-            for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
-                Value argVal = evalExpr(objMethod->arguments[i].get());
-                if (argVal.type == ValueType::FLOAT) setFloatVar(method->parameters[i], argVal.f);
-                else if (argVal.type == ValueType::CHAR) setCharVar(method->parameters[i], argVal.c);
-                else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
-                else setIntVar(method->parameters[i], argVal.i);
-            }
-            current_class_stack.push_back(classDef->name);
-            int returnValue = 0;
-            for (const auto& stmt : method->body) {
-                if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
-                    returnValue = evalExpr(ret->value.get()).i;
-                    break;
-                } else {
-                    execute(stmt.get());
-                }
-            }
-            current_class_stack.pop_back();
-            // Update fields from local scope after method call
-            for (auto& field : class_defs[inst.className]->fields) {
-                const std::string& fname = field.second;
-                if (string_variables_stack.back().count(fname)) inst.fields[fname] = string_variables_stack.back()[fname];
-                else if (variables_stack.back().count(fname)) inst.fields[fname] = variables_stack.back()[fname];
-                else if (float_variables_stack.back().count(fname)) inst.fields[fname] = float_variables_stack.back()[fname];
-                else if (char_variables_stack.back().count(fname)) inst.fields[fname] = char_variables_stack.back()[fname];
-            }
-            // Pop local scopes
-            if (variables_stack.size() > 1) variables_stack.pop_back();
-            if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
-            if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
-            if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
-            return Value(returnValue);
         }
-        throw std::runtime_error("Unsupported object method call");
+        // Generic fallback: evaluate the object expression and resolve to ObjectInstance
+        ObjectInstance* inst = nullptr;
+        // If the object is a Variable and matches an object, use it
+        if (auto var = dynamic_cast<const Variable*>(objMethod->object.get())) {
+            if (objects.count(var->name)) {
+                inst = &objects[var->name];
+            }
+        }
+        if (!inst) {
+            Value objVal = evalExpr(objMethod->object.get());
+            if (objVal.type == ValueType::STRING) {
+                std::string name = objVal.s;
+                size_t lb = name.find('[');
+                size_t rb = name.find(']');
+                if (lb != std::string::npos && rb != std::string::npos && rb > lb) {
+                    std::string arrName = name.substr(0, lb);
+                    int idx = std::stoi(name.substr(lb+1, rb-lb-1));
+                    if (!object_arrays.count(arrName)) throw std::runtime_error("Undefined object array: " + arrName);
+                    if (idx < 0 || idx >= (int)object_arrays[arrName].size()) throw std::runtime_error("Object array index out of bounds: " + std::to_string(idx));
+                    inst = &object_arrays[arrName][idx];
+                } else if (objects.count(name)) {
+                    inst = &objects[name];
+                }
+            }
+        }
+        if (!inst) throw std::runtime_error("Cannot resolve object for method call");
+        // Find the class definition
+        if (!class_defs.count(inst->className)) throw std::runtime_error("Class not found: " + inst->className);
+        const ClassDef* classDef = class_defs.at(inst->className);
+        // Find the method
+        const FunctionDef* method = nullptr;
+        std::vector<const FunctionDef*> allMethods;
+        collectMethods(classDef, allMethods);
+        for (const auto& m : allMethods) {
+            if (m->name == objMethod->method) {
+                method = m;
+                break;
+            }
+        }
+        if (!method) throw std::runtime_error("Method not found: " + objMethod->method + " in class " + inst->className);
+        if (objMethod->arguments.size() != method->parameters.size())
+            throw std::runtime_error("Argument count mismatch in call to method " + objMethod->method);
+        // Push new local scopes
+        variables_stack.push_back({});
+        float_variables_stack.push_back({});
+        char_variables_stack.push_back({});
+        string_variables_stack.push_back({});
+        // Set up fields as locals
+        for (const auto& field : inst->fields) {
+            if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
+            else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
+            else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
+            else if (std::holds_alternative<std::string>(field.second)) setStringVar(field.first, std::get<std::string>(field.second));
+        }
+        // Set up parameters
+        for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
+            Value argVal = evalExpr(objMethod->arguments[i].get());
+            if (argVal.type == ValueType::FLOAT) setFloatVar(method->parameters[i], argVal.f);
+            else if (argVal.type == ValueType::CHAR) setCharVar(method->parameters[i], argVal.c);
+            else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
+            else setIntVar(method->parameters[i], argVal.i);
+        }
+        current_class_stack.push_back(classDef->name);
+        current_object_stack.push_back(inst);
+        int returnValue = 0;
+        for (const auto& stmt : method->body) {
+            if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
+                returnValue = evalExpr(ret->value.get()).i;
+                break;
+            } else {
+                execute(stmt.get());
+            }
+        }
+        current_class_stack.pop_back();
+        current_object_stack.pop_back();
+        // Update fields from local scope after method call
+        for (auto& field : class_defs[inst->className]->fields) {
+            const std::string& fname = field.second;
+            if (string_variables_stack.back().count(fname)) inst->fields[fname] = string_variables_stack.back()[fname];
+            else if (variables_stack.back().count(fname)) inst->fields[fname] = variables_stack.back()[fname];
+            else if (float_variables_stack.back().count(fname)) inst->fields[fname] = float_variables_stack.back()[fname];
+            else if (char_variables_stack.back().count(fname)) inst->fields[fname] = char_variables_stack.back()[fname];
+        }
+        // Pop local scopes
+        if (variables_stack.size() > 1) variables_stack.pop_back();
+        if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
+        if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
+        if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
+        return Value(returnValue);
     }
 
     throw std::runtime_error("Unknown expression");
@@ -856,10 +812,12 @@ void execute(const Statement* stmt) {
             }
             // Execute constructor body
             current_class_stack.push_back(classDef->name);
+            current_object_stack.push_back(&objects[objinst->varName]);
             for (const auto& stmt : ctor->body) {
                 execute(stmt.get());
             }
             current_class_stack.pop_back();
+            current_object_stack.pop_back();
             // Update fields from local scope after constructor
             for (auto& field : class_defs[objinst->className]->fields) {
                 const std::string& fname = field.second;

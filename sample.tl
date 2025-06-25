@@ -14,6 +14,10 @@ class Student : Person {
         print("Hi, I'm student " + name + " (ID: " + studentId + ")");
         super.greet();
     }
+    ComeAndDo greet2() {
+        this.greet();
+        print("Greeted twice");
+    }
 }
 
 Person p[2];
@@ -30,3 +34,4 @@ s.name = "Charlie";
 s.age = 20;
 s.studentId = 12345;
 s.greet(); // Should use Student's greet()
+s.greet2(); // Should use Student's greet2() and call this.greet()
