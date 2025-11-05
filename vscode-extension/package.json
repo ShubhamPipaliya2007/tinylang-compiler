@@ -2,18 +2,30 @@
     "name": "tinylang",
     "displayName": "TinyLang",
     "description": "Syntax highlighting for the TinyLang compiler language",
-    "version": "0.0.2",
+    "version": "0.0.3",
+    "publisher": "shubhampipaliya",
+    "private": false,
     "repository": {
         "type": "git",
         "url": "https://github.com/ShubhamPipaliya2007/tinylang-compiler.git"
     },
-    "publisher": "shubhampipaliya",
     "engines": {
         "vscode": "^1.70.0"
     },
     "categories": [
         "Programming Languages"
     ],
+    "keywords": [
+        "tinylang",
+        "syntax",
+        "highlighting",
+        "compiler"
+    ],
+    "galleryBanner": {
+        "color": "#1e1e1e",
+        "theme": "dark"
+    },
+    "license": "MIT",
     "contributes": {
         "languages": [
             {
