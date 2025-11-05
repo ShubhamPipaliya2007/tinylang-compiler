@@ -32,6 +32,12 @@
   - Field assignment and access (e.g., `p.name = "Alice";`, `print(p.name);`)
   - Method calls on objects (e.g., `p.greet();`)
   - **Constructor support:** Use an `init` method for initialization, called automatically on instantiation with arguments
+  - **Inheritance:** Classes can inherit from other classes using `:` syntax (e.g., `class Student : Person`)
+- **Module System (Python-like imports):**
+  - Import other `.tl` files to reuse code: `import "library.tl";`
+  - Organize code into reusable modules
+  - Automatic circular dependency detection
+  - Relative path resolution for imports
 
 ### 🛠 Setup
 
@@ -154,6 +160,47 @@ p[1].name = "Bob";
 p[1].age = 25;
 p[1].greet();
 ```
+
+#### Example: Imports and Module System (Python-like!)
+**math_lib.tl:**
+```tl
+ComeAndDo square(int x) {
+    return x * x;
+}
+
+ComeAndDo add(int a, int b) {
+    return a + b;
+}
+
+ComeAndDo power(int base, int exp) {
+    if (exp == 0) {
+        return 1;
+    }
+    int result = 1;
+    int i = 0;
+    while (i < exp) {
+        result = result * base;
+        i = i + 1;
+    }
+    return result;
+}
+```
+
+**main.tl:**
+```tl
+// Import the math library
+import "math_lib.tl";
+
+// Now use the imported functions!
+int x = 5;
+print("Square of 5 = " + square(x));
+print("10 + 20 = " + add(10, 20));
+print("2^8 = " + power(2, 8));
+```
+
+Run: `./tinylang.exe main.tl`
+
+This allows you to organize your TinyLang code into reusable modules, just like Python's `import` statement!
 
 ---
 

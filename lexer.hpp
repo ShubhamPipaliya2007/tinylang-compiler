@@ -46,7 +46,8 @@ enum class TokenType {
     NOT,             // !
     CLASS,           // class keyword
     DOT,             // . operator for member access
-    COLON,            // : for inheritance
+    COLON,           // : for inheritance
+    IMPORT,          // import keyword
 };
 
 

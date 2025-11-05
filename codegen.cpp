@@ -835,6 +835,12 @@ void execute(const Statement* stmt) {
         return;
     }
 
+    // Import statements (already processed by main.cpp, so just ignore)
+    else if (auto import = dynamic_cast<const ImportStatement*>(stmt)) {
+        // Import has already been processed, nothing to do here
+        return;
+    }
+
     // Default fallback
     else {
         throw std::runtime_error("Unsupported statement");

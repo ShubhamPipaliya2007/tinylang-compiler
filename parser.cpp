@@ -267,6 +267,15 @@ static std::unique_ptr<Statement> parseSimpleAssignment() {
 }
 
 static std::unique_ptr<Statement> parseStatement() {
+    // Handle import statements
+    if (match(TokenType::IMPORT)) {
+        if (peek().type != TokenType::STRING_LITERAL)
+            throw std::runtime_error(errorMsg("Expected string literal after 'import'", peek()));
+        std::string filename = advance().value;
+        if (!match(TokenType::SEMICOLON))
+            throw std::runtime_error(errorMsg("Expected ';' after import", peek()));
+        return std::make_unique<ImportStatement>(filename);
+    }
     if (match(TokenType::CLASS)) {
         auto classDef = parseClass();
         if (auto cd = dynamic_cast<ClassDef*>(classDef.get())) {

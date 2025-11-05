@@ -207,3 +207,9 @@ struct ObjectInstantiation : Statement {
         : className(std::move(c)), varName(std::move(v)), arguments(std::move(args)) {}
 };
 
+// AST node for import statement
+struct ImportStatement : Statement {
+    std::string filename;
+    ImportStatement(std::string f) : filename(std::move(f)) {}
+};
+

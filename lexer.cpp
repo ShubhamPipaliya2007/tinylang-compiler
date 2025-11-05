@@ -74,6 +74,7 @@ std::vector<Token> tokenize(const std::string& input) {
             else if (id == "read") type = TokenType::READ;
             else if (id == "input") type = TokenType::INPUT;
             else if (id == "class") type = TokenType::CLASS;
+            else if (id == "import") type = TokenType::IMPORT;
             else if (id == "true" || id == "false") type = TokenType::BOOLEAN_LITERAL;
             else type = TokenType::IDENTIFIER;
             tokens.push_back({type, id, token_line, token_col});
