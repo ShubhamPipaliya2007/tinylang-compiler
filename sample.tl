@@ -58,3 +58,44 @@ int dummy3 = repeat("Imported functions work!", 2);
 print("");
 print("SUCCESS! Multi-import system working!");
 print("You can import multiple libraries, just like Python!");
+
+print("");
+print("=== Class and Object Creation Demo ===");
+
+class Person {
+    string name;
+    int age;
+
+    ComeAndDo init(string name, int age) {
+        name = name;
+        age  = age;
+    }
+
+    ComeAndDo displayInfo() {
+        print("Name: " + name);
+        print("Age: " + age);
+    }
+}
+
+Person p("Alice", 30);
+print("Created a Person object:");
+p.displayInfo();                  // use the variable `p`
+
+print("");
+class Student : Person {
+    string school;
+
+    ComeAndDo init(string n, int a, string sch) {
+        super.init(n, a);      // call parent constructor
+        school = sch;
+    }
+
+    ComeAndDo displayMoreInfo() {
+        super.displayInfo();        // inherited method
+        print("School: " + school);
+    }
+}
+
+Student s("Bob", 20, "TinyLang University");
+print("Created a Student object:");
+s.displayMoreInfo();              // use the variable `s`
