@@ -49,15 +49,21 @@
 
 #### 🔁 Build
 
+```sh
 make
+```
 
-or manually
+or manually:
 
+```sh
 g++ -std=c++17 -Wall -o tinylang.exe main.cpp lexer.cpp parser.cpp codegen.cpp
+```
 
 #### ▶️ Run
 
+```sh
 ./tinylang.exe yourfile.tl
+```
 
 ### 💡 Example
 
@@ -98,7 +104,7 @@ print(flags[1]);
 string words[] = {"hello", "world"};
 print(words[0]);
 
-# String variable assignment and concatenation
+// String variable assignment and concatenation
 string s1 = "Hello";
 string s2 = "World";
 string s3 = s1 + ", " + s2;
@@ -107,7 +113,7 @@ string s4 = s3;
 print(s4);
 print("Done!");
 
-# Local and global variable scoping
+// Local and global variable scoping
 int x = 100;
 print(x); // Prints 100 (global)
 

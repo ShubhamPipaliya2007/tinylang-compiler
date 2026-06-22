@@ -173,6 +173,10 @@ Value evalExpr(const Expr* expr) {
         if (unary->op == TokenType::NOT) {
             return Value(operand.i == 0 ? 1 : 0);
         }
+        if (unary->op == TokenType::MINUS) {
+            if (operand.type == ValueType::FLOAT) return Value(-operand.f);
+            return Value(-operand.i);
+        }
         throw std::runtime_error("Unsupported unary operator");
     }
     else if (auto bin = dynamic_cast<const BinaryExpr*>(expr)) {
@@ -195,9 +199,18 @@ Value evalExpr(const Expr* expr) {
         // String concatenation if either is a string
         if (bin->op == TokenType::PLUS) {
             if (left.type == ValueType::STRING || right.type == ValueType::STRING) {
-                std::string lstr = (left.type == ValueType::STRING) ? left.s : std::to_string(left.i);
-                std::string rstr = (right.type == ValueType::STRING) ? right.s : std::to_string(right.i);
-                return Value(lstr + rstr);
+                auto toStr = [](const Value& v) -> std::string {
+                    if (v.type == ValueType::STRING) return v.s;
+                    if (v.type == ValueType::FLOAT) {
+                        std::string s = std::to_string(v.f);
+                        s.erase(s.find_last_not_of('0') + 1);
+                        if (s.back() == '.') s.pop_back();
+                        return s;
+                    }
+                    if (v.type == ValueType::CHAR) return std::string(1, v.c);
+                    return std::to_string(v.i);
+                };
+                return Value(toStr(left) + toStr(right));
             }
         }
         // Promote to float if either is float
@@ -266,16 +279,16 @@ Value evalExpr(const Expr* expr) {
         string_variables_stack.push_back({});
         for (size_t i = 0; i < call->arguments.size(); ++i) {
             Value argVal = evalExpr(call->arguments[i].get());
-            if (argVal.type == ValueType::FLOAT) setFloatVar(func->parameters[i], argVal.f);
-            else if (argVal.type == ValueType::CHAR) setCharVar(func->parameters[i], argVal.c);
-            else if (argVal.type == ValueType::STRING) setStringVar(func->parameters[i], argVal.s);
-            else setIntVar(func->parameters[i], argVal.i);
+            if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[func->parameters[i]] = argVal.f;
+            else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[func->parameters[i]] = argVal.c;
+            else if (argVal.type == ValueType::STRING) string_variables_stack.back()[func->parameters[i]] = argVal.s;
+            else variables_stack.back()[func->parameters[i]] = argVal.i;
         }
 
-        int returnValue = 0;
+        Value returnValue(0);
         for (const auto& stmt : func->body) {
             if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
-                returnValue = evalExpr(ret->value.get()).i;
+                returnValue = evalExpr(ret->value.get());
                 break;
             } else {
                 execute(stmt.get());
@@ -287,7 +300,7 @@ Value evalExpr(const Expr* expr) {
         if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
         if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
         if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
-        return Value(returnValue);
+        return returnValue;
     }
     else if (auto arrAccess = dynamic_cast<const ArrayAccess*>(expr)) {
         // Object array access
@@ -384,31 +397,31 @@ Value evalExpr(const Expr* expr) {
                 float_variables_stack.push_back({});
                 char_variables_stack.push_back({});
                 string_variables_stack.push_back({});
-                // Set up fields as locals (from the current object)
+                // Set up fields as locals (direct insertion to avoid outer-scope shadowing)
                 ObjectInstance* inst = nullptr;
                 if (!current_object_stack.empty()) inst = current_object_stack.back();
                 if (inst) {
                     for (const auto& field : inst->fields) {
-                        if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
-                        else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
-                        else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
-                        else if (std::holds_alternative<std::string>(field.second)) setStringVar(field.first, std::get<std::string>(field.second));
+                        if (std::holds_alternative<int>(field.second)) variables_stack.back()[field.first] = std::get<int>(field.second);
+                        else if (std::holds_alternative<double>(field.second)) float_variables_stack.back()[field.first] = std::get<double>(field.second);
+                        else if (std::holds_alternative<char>(field.second)) char_variables_stack.back()[field.first] = std::get<char>(field.second);
+                        else if (std::holds_alternative<std::string>(field.second)) string_variables_stack.back()[field.first] = std::get<std::string>(field.second);
                     }
                 }
-                // Set up parameters
+                // Set up parameters (direct insertion)
                 for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
                     Value argVal = evalExpr(objMethod->arguments[i].get());
-                    if (argVal.type == ValueType::FLOAT) setFloatVar(method->parameters[i], argVal.f);
-                    else if (argVal.type == ValueType::CHAR) setCharVar(method->parameters[i], argVal.c);
-                    else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
-                    else setIntVar(method->parameters[i], argVal.i);
+                    if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[method->parameters[i]] = argVal.f;
+                    else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[method->parameters[i]] = argVal.c;
+                    else if (argVal.type == ValueType::STRING) string_variables_stack.back()[method->parameters[i]] = argVal.s;
+                    else variables_stack.back()[method->parameters[i]] = argVal.i;
                 }
                 current_class_stack.push_back(baseDef->name);
                 current_object_stack.push_back(inst);
-                int returnValue = 0;
+                Value returnValue(0);
                 for (const auto& stmt : method->body) {
                     if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
-                        returnValue = evalExpr(ret->value.get()).i;
+                        returnValue = evalExpr(ret->value.get());
                         break;
                     } else {
                         execute(stmt.get());
@@ -416,7 +429,7 @@ Value evalExpr(const Expr* expr) {
                 }
                 current_class_stack.pop_back();
                 current_object_stack.pop_back();
-                // Update fields from local scope after method call
+                // Update fields from local scope (super's scope) after method call
                 if (inst) {
                     for (auto& field : inst->fields) {
                         const std::string& fname = field.first;
@@ -425,13 +438,30 @@ Value evalExpr(const Expr* expr) {
                         else if (float_variables_stack.back().count(fname)) field.second = float_variables_stack.back()[fname];
                         else if (char_variables_stack.back().count(fname)) field.second = char_variables_stack.back()[fname];
                     }
+                    // Propagate updated fields back to caller's scope so caller sees the changes
+                    if (string_variables_stack.size() >= 2) {
+                        auto& callerStr  = *(string_variables_stack.rbegin() + 1);
+                        auto& callerInt  = *(variables_stack.rbegin() + 1);
+                        auto& callerFlt  = *(float_variables_stack.rbegin() + 1);
+                        auto& callerChr  = *(char_variables_stack.rbegin() + 1);
+                        for (const auto& field : inst->fields) {
+                            if (std::holds_alternative<std::string>(field.second) && callerStr.count(field.first))
+                                callerStr[field.first] = std::get<std::string>(field.second);
+                            else if (std::holds_alternative<int>(field.second) && callerInt.count(field.first))
+                                callerInt[field.first] = std::get<int>(field.second);
+                            else if (std::holds_alternative<double>(field.second) && callerFlt.count(field.first))
+                                callerFlt[field.first] = std::get<double>(field.second);
+                            else if (std::holds_alternative<char>(field.second) && callerChr.count(field.first))
+                                callerChr[field.first] = std::get<char>(field.second);
+                        }
+                    }
                 }
                 // Pop local scopes
                 if (variables_stack.size() > 1) variables_stack.pop_back();
                 if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
                 if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
                 if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
-                return Value(returnValue);
+                return returnValue;
             } else if (var->name == "this") {
                 if (current_object_stack.empty() || !current_object_stack.back()) throw std::runtime_error("'this' used outside of class method");
                 ObjectInstance* inst = current_object_stack.back();
@@ -456,28 +486,28 @@ Value evalExpr(const Expr* expr) {
                 float_variables_stack.push_back({});
                 char_variables_stack.push_back({});
                 string_variables_stack.push_back({});
-                // Set up fields as locals
+                // Set up fields as locals (direct insertion)
                 for (const auto& field : inst->fields) {
-                    if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
-                    else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
-                    else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
-                    else if (std::holds_alternative<std::string>(field.second)) setStringVar(field.first, std::get<std::string>(field.second));
+                    if (std::holds_alternative<int>(field.second)) variables_stack.back()[field.first] = std::get<int>(field.second);
+                    else if (std::holds_alternative<double>(field.second)) float_variables_stack.back()[field.first] = std::get<double>(field.second);
+                    else if (std::holds_alternative<char>(field.second)) char_variables_stack.back()[field.first] = std::get<char>(field.second);
+                    else if (std::holds_alternative<std::string>(field.second)) string_variables_stack.back()[field.first] = std::get<std::string>(field.second);
                 }
-                // Set up parameters
+                // Set up parameters (direct insertion)
                 for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
                     Value argVal = evalExpr(objMethod->arguments[i].get());
-                    if (argVal.type == ValueType::FLOAT) setFloatVar(method->parameters[i], argVal.f);
-                    else if (argVal.type == ValueType::CHAR) setCharVar(method->parameters[i], argVal.c);
-                    else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
-                    else setIntVar(method->parameters[i], argVal.i);
+                    if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[method->parameters[i]] = argVal.f;
+                    else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[method->parameters[i]] = argVal.c;
+                    else if (argVal.type == ValueType::STRING) string_variables_stack.back()[method->parameters[i]] = argVal.s;
+                    else variables_stack.back()[method->parameters[i]] = argVal.i;
                 }
                 // Track class and object context
                 current_class_stack.push_back(classDef->name);
                 current_object_stack.push_back(inst);
-                int returnValue = 0;
+                Value returnValue(0);
                 for (const auto& stmt : method->body) {
                     if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
-                        returnValue = evalExpr(ret->value.get()).i;
+                        returnValue = evalExpr(ret->value.get());
                         break;
                     } else {
                         execute(stmt.get());
@@ -498,7 +528,7 @@ Value evalExpr(const Expr* expr) {
                 if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
                 if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
                 if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
-                return Value(returnValue);
+                return returnValue;
             }
         }
         // Generic fallback: evaluate the object expression and resolve to ObjectInstance
@@ -548,27 +578,27 @@ Value evalExpr(const Expr* expr) {
         float_variables_stack.push_back({});
         char_variables_stack.push_back({});
         string_variables_stack.push_back({});
-        // Set up fields as locals
+        // Set up fields as locals (direct insertion)
         for (const auto& field : inst->fields) {
-            if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
-            else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
-            else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
-            else if (std::holds_alternative<std::string>(field.second)) setStringVar(field.first, std::get<std::string>(field.second));
+            if (std::holds_alternative<int>(field.second)) variables_stack.back()[field.first] = std::get<int>(field.second);
+            else if (std::holds_alternative<double>(field.second)) float_variables_stack.back()[field.first] = std::get<double>(field.second);
+            else if (std::holds_alternative<char>(field.second)) char_variables_stack.back()[field.first] = std::get<char>(field.second);
+            else if (std::holds_alternative<std::string>(field.second)) string_variables_stack.back()[field.first] = std::get<std::string>(field.second);
         }
-        // Set up parameters
+        // Set up parameters (direct insertion)
         for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
             Value argVal = evalExpr(objMethod->arguments[i].get());
-            if (argVal.type == ValueType::FLOAT) setFloatVar(method->parameters[i], argVal.f);
-            else if (argVal.type == ValueType::CHAR) setCharVar(method->parameters[i], argVal.c);
-            else if (argVal.type == ValueType::STRING) setStringVar(method->parameters[i], argVal.s);
-            else setIntVar(method->parameters[i], argVal.i);
+            if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[method->parameters[i]] = argVal.f;
+            else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[method->parameters[i]] = argVal.c;
+            else if (argVal.type == ValueType::STRING) string_variables_stack.back()[method->parameters[i]] = argVal.s;
+            else variables_stack.back()[method->parameters[i]] = argVal.i;
         }
         current_class_stack.push_back(classDef->name);
         current_object_stack.push_back(inst);
-        int returnValue = 0;
+        Value returnValue(0);
         for (const auto& stmt : method->body) {
             if (auto ret = dynamic_cast<const Return*>(stmt.get())) {
-                returnValue = evalExpr(ret->value.get()).i;
+                returnValue = evalExpr(ret->value.get());
                 break;
             } else {
                 execute(stmt.get());
@@ -576,20 +606,20 @@ Value evalExpr(const Expr* expr) {
         }
         current_class_stack.pop_back();
         current_object_stack.pop_back();
-        // Update fields from local scope after method call
-        for (auto& field : class_defs[inst->className]->fields) {
-            const std::string& fname = field.second;
-            if (string_variables_stack.back().count(fname)) inst->fields[fname] = string_variables_stack.back()[fname];
-            else if (variables_stack.back().count(fname)) inst->fields[fname] = variables_stack.back()[fname];
-            else if (float_variables_stack.back().count(fname)) inst->fields[fname] = float_variables_stack.back()[fname];
-            else if (char_variables_stack.back().count(fname)) inst->fields[fname] = char_variables_stack.back()[fname];
+        // Update fields from local scope after method call (all fields including inherited)
+        for (auto& field : inst->fields) {
+            const std::string& fname = field.first;
+            if (string_variables_stack.back().count(fname)) field.second = string_variables_stack.back()[fname];
+            else if (variables_stack.back().count(fname)) field.second = variables_stack.back()[fname];
+            else if (float_variables_stack.back().count(fname)) field.second = float_variables_stack.back()[fname];
+            else if (char_variables_stack.back().count(fname)) field.second = char_variables_stack.back()[fname];
         }
         // Pop local scopes
         if (variables_stack.size() > 1) variables_stack.pop_back();
         if (float_variables_stack.size() > 1) float_variables_stack.pop_back();
         if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
         if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
-        return Value(returnValue);
+        return returnValue;
     }
 
     throw std::runtime_error("Unknown expression");
@@ -795,20 +825,20 @@ void execute(const Statement* stmt) {
             float_variables_stack.push_back({});
             char_variables_stack.push_back({});
             string_variables_stack.push_back({});
-            // Set up fields as locals
+            // Set up fields as locals (direct insertion to avoid outer-scope shadowing)
             for (const auto& field : inst.fields) {
-                if (std::holds_alternative<int>(field.second)) setIntVar(field.first, std::get<int>(field.second));
-                else if (std::holds_alternative<double>(field.second)) setFloatVar(field.first, std::get<double>(field.second));
-                else if (std::holds_alternative<char>(field.second)) setCharVar(field.first, std::get<char>(field.second));
-                else if (std::holds_alternative<std::string>(field.second)) setStringVar(field.first, std::get<std::string>(field.second));
+                if (std::holds_alternative<int>(field.second)) variables_stack.back()[field.first] = std::get<int>(field.second);
+                else if (std::holds_alternative<double>(field.second)) float_variables_stack.back()[field.first] = std::get<double>(field.second);
+                else if (std::holds_alternative<char>(field.second)) char_variables_stack.back()[field.first] = std::get<char>(field.second);
+                else if (std::holds_alternative<std::string>(field.second)) string_variables_stack.back()[field.first] = std::get<std::string>(field.second);
             }
-            // Set up parameters
+            // Set up parameters (direct insertion)
             for (size_t i = 0; i < objinst->arguments.size(); ++i) {
                 Value argVal = evalExpr(objinst->arguments[i].get());
-                if (argVal.type == ValueType::FLOAT) setFloatVar(ctor->parameters[i], argVal.f);
-                else if (argVal.type == ValueType::CHAR) setCharVar(ctor->parameters[i], argVal.c);
-                else if (argVal.type == ValueType::STRING) setStringVar(ctor->parameters[i], argVal.s);
-                else setIntVar(ctor->parameters[i], argVal.i);
+                if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[ctor->parameters[i]] = argVal.f;
+                else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[ctor->parameters[i]] = argVal.c;
+                else if (argVal.type == ValueType::STRING) string_variables_stack.back()[ctor->parameters[i]] = argVal.s;
+                else variables_stack.back()[ctor->parameters[i]] = argVal.i;
             }
             // Execute constructor body
             current_class_stack.push_back(classDef->name);
@@ -818,9 +848,11 @@ void execute(const Statement* stmt) {
             }
             current_class_stack.pop_back();
             current_object_stack.pop_back();
-            // Update fields from local scope after constructor
-            for (auto& field : class_defs[objinst->className]->fields) {
-                const std::string& fname = field.second;
+            // Update all fields (including inherited) from local scope after constructor
+            std::vector<std::pair<std::string, std::string>> allFieldsForUpdate;
+            collectFields(classDef, allFieldsForUpdate);
+            for (auto& f : allFieldsForUpdate) {
+                const std::string& fname = f.second;
                 if (string_variables_stack.back().count(fname)) objects[objinst->varName].fields[fname] = string_variables_stack.back()[fname];
                 else if (variables_stack.back().count(fname)) objects[objinst->varName].fields[fname] = variables_stack.back()[fname];
                 else if (float_variables_stack.back().count(fname)) objects[objinst->varName].fields[fname] = float_variables_stack.back()[fname];

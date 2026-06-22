@@ -66,9 +66,9 @@ class Person {
     string name;
     int age;
 
-    ComeAndDo init(string name, int age) {
-        name = name;
-        age  = age;
+    ComeAndDo init(string n, int a) {
+        name = n;
+        age  = a;
     }
 
     ComeAndDo displayInfo() {
