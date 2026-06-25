@@ -8,3 +8,7 @@
 .vscode/
 build/
 sample.tl
+agents
+reference
+rules
+CLAUDE.md
