@@ -5,6 +5,7 @@
 #include "lexer.hpp"
 
 struct Expr {
+    int line = 0;
     virtual ~Expr() = default;
 };
 
@@ -57,6 +58,7 @@ struct ReadExpr : Expr {
 };
 
 struct Statement {
+    int line = 0;
     virtual ~Statement() = default;
 };
 
@@ -75,12 +77,12 @@ struct Print : Statement {
 
 struct FunctionDef : public Statement {
     std::string name;
-    std::vector<std::string> parameters;
+    std::vector<std::pair<std::string, std::string>> params; // (type, name)
     std::vector<std::unique_ptr<Statement>> body;
 
-    FunctionDef(std::string name, std::vector<std::string> params,
+    FunctionDef(std::string name, std::vector<std::pair<std::string, std::string>> p,
                 std::vector<std::unique_ptr<Statement>> body)
-        : name(std::move(name)), parameters(std::move(params)), body(std::move(body)) {}
+        : name(std::move(name)), params(std::move(p)), body(std::move(body)) {}
 };
 
 struct Return : Statement {
@@ -211,5 +213,13 @@ struct ObjectInstantiation : Statement {
 struct ImportStatement : Statement {
     std::string filename;
     ImportStatement(std::string f) : filename(std::move(f)) {}
+};
+
+// AST node for explicit type cast: int(x), float(x), char(x), bool(x)
+struct CastExpr : Expr {
+    std::string targetType;
+    std::unique_ptr<Expr> operand;
+    CastExpr(std::string t, std::unique_ptr<Expr> op)
+        : targetType(std::move(t)), operand(std::move(op)) {}
 };
 

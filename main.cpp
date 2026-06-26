@@ -4,6 +4,7 @@
 #include "lexer.hpp"
 #include "parser.hpp"
 #include "ast.hpp"
+#include "semantic.hpp"
 #include <unordered_set>
 #include <set>
 #include <filesystem>
@@ -125,6 +126,9 @@ int main(int argc, char *argv[])
 
         // Process all imports recursively
         statements = processImports(std::move(statements), base_dir);
+
+        // Semantic analysis (type checking, scope resolution, undefined-symbol detection)
+        semanticAnalyze(statements);
 
         // Execute
         run(statements);

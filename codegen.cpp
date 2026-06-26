@@ -270,7 +270,7 @@ Value evalExpr(const Expr* expr) {
         if (!functions.count(call->callee))
             throw std::runtime_error("Undefined function: " + call->callee);
         const FunctionDef* func = functions[call->callee];
-        if (call->arguments.size() != func->parameters.size())
+        if (call->arguments.size() != func->params.size())
             throw std::runtime_error("Argument count mismatch in call to " + call->callee);
         // Push new local scopes
         variables_stack.push_back({});
@@ -279,10 +279,11 @@ Value evalExpr(const Expr* expr) {
         string_variables_stack.push_back({});
         for (size_t i = 0; i < call->arguments.size(); ++i) {
             Value argVal = evalExpr(call->arguments[i].get());
-            if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[func->parameters[i]] = argVal.f;
-            else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[func->parameters[i]] = argVal.c;
-            else if (argVal.type == ValueType::STRING) string_variables_stack.back()[func->parameters[i]] = argVal.s;
-            else variables_stack.back()[func->parameters[i]] = argVal.i;
+            const std::string& pname = func->params[i].second;
+            if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[pname] = argVal.f;
+            else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[pname] = argVal.c;
+            else if (argVal.type == ValueType::STRING) string_variables_stack.back()[pname] = argVal.s;
+            else variables_stack.back()[pname] = argVal.i;
         }
 
         Value returnValue(0);
@@ -390,7 +391,7 @@ Value evalExpr(const Expr* expr) {
                     }
                 }
                 if (!method) throw std::runtime_error("Method '" + objMethod->method + "' not found in base class '" + baseDef->name + "'");
-                if (objMethod->arguments.size() != method->parameters.size())
+                if (objMethod->arguments.size() != method->params.size())
                     throw std::runtime_error("Argument count mismatch in call to base method '" + objMethod->method + "'");
                 // Push new local scopes
                 variables_stack.push_back({});
@@ -411,10 +412,11 @@ Value evalExpr(const Expr* expr) {
                 // Set up parameters (direct insertion)
                 for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
                     Value argVal = evalExpr(objMethod->arguments[i].get());
-                    if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[method->parameters[i]] = argVal.f;
-                    else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[method->parameters[i]] = argVal.c;
-                    else if (argVal.type == ValueType::STRING) string_variables_stack.back()[method->parameters[i]] = argVal.s;
-                    else variables_stack.back()[method->parameters[i]] = argVal.i;
+                    const std::string& pname = method->params[i].second;
+                    if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[pname] = argVal.f;
+                    else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[pname] = argVal.c;
+                    else if (argVal.type == ValueType::STRING) string_variables_stack.back()[pname] = argVal.s;
+                    else variables_stack.back()[pname] = argVal.i;
                 }
                 current_class_stack.push_back(baseDef->name);
                 current_object_stack.push_back(inst);
@@ -479,7 +481,7 @@ Value evalExpr(const Expr* expr) {
                     }
                 }
                 if (!method) throw std::runtime_error("Method not found: " + objMethod->method + " in class " + inst->className);
-                if (objMethod->arguments.size() != method->parameters.size())
+                if (objMethod->arguments.size() != method->params.size())
                     throw std::runtime_error("Argument count mismatch in call to method " + objMethod->method);
                 // Push new local scopes
                 variables_stack.push_back({});
@@ -496,10 +498,11 @@ Value evalExpr(const Expr* expr) {
                 // Set up parameters (direct insertion)
                 for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
                     Value argVal = evalExpr(objMethod->arguments[i].get());
-                    if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[method->parameters[i]] = argVal.f;
-                    else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[method->parameters[i]] = argVal.c;
-                    else if (argVal.type == ValueType::STRING) string_variables_stack.back()[method->parameters[i]] = argVal.s;
-                    else variables_stack.back()[method->parameters[i]] = argVal.i;
+                    const std::string& pname = method->params[i].second;
+                    if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[pname] = argVal.f;
+                    else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[pname] = argVal.c;
+                    else if (argVal.type == ValueType::STRING) string_variables_stack.back()[pname] = argVal.s;
+                    else variables_stack.back()[pname] = argVal.i;
                 }
                 // Track class and object context
                 current_class_stack.push_back(classDef->name);
@@ -571,7 +574,7 @@ Value evalExpr(const Expr* expr) {
             }
         }
         if (!method) throw std::runtime_error("Method not found: " + objMethod->method + " in class " + inst->className);
-        if (objMethod->arguments.size() != method->parameters.size())
+        if (objMethod->arguments.size() != method->params.size())
             throw std::runtime_error("Argument count mismatch in call to method " + objMethod->method);
         // Push new local scopes
         variables_stack.push_back({});
@@ -588,10 +591,11 @@ Value evalExpr(const Expr* expr) {
         // Set up parameters (direct insertion)
         for (size_t i = 0; i < objMethod->arguments.size(); ++i) {
             Value argVal = evalExpr(objMethod->arguments[i].get());
-            if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[method->parameters[i]] = argVal.f;
-            else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[method->parameters[i]] = argVal.c;
-            else if (argVal.type == ValueType::STRING) string_variables_stack.back()[method->parameters[i]] = argVal.s;
-            else variables_stack.back()[method->parameters[i]] = argVal.i;
+            const std::string& pname = method->params[i].second;
+            if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[pname] = argVal.f;
+            else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[pname] = argVal.c;
+            else if (argVal.type == ValueType::STRING) string_variables_stack.back()[pname] = argVal.s;
+            else variables_stack.back()[pname] = argVal.i;
         }
         current_class_stack.push_back(classDef->name);
         current_object_stack.push_back(inst);
@@ -620,6 +624,36 @@ Value evalExpr(const Expr* expr) {
         if (char_variables_stack.size() > 1) char_variables_stack.pop_back();
         if (string_variables_stack.size() > 1) string_variables_stack.pop_back();
         return returnValue;
+    }
+
+    else if (auto castExpr = dynamic_cast<const CastExpr*>(expr)) {
+        Value val = evalExpr(castExpr->operand.get());
+        if (castExpr->targetType == "int") {
+            if (val.type == ValueType::FLOAT)  return Value((int)val.f);
+            if (val.type == ValueType::CHAR)   return Value((int)val.c);
+            if (val.type == ValueType::STRING) {
+                try { return Value(std::stoi(val.s)); } catch (...) { return Value(0); }
+            }
+            return Value(val.i);
+        }
+        if (castExpr->targetType == "float") {
+            if (val.type == ValueType::INT)  return Value((double)val.i);
+            if (val.type == ValueType::CHAR) return Value((double)(int)val.c);
+            return Value(val.f);
+        }
+        if (castExpr->targetType == "char") {
+            if (val.type == ValueType::INT) return Value((char)val.i);
+            return Value(val.c);
+        }
+        if (castExpr->targetType == "bool") {
+            bool b = (val.type == ValueType::FLOAT) ? val.f != 0.0 : val.i != 0;
+            return Value(b ? 1 : 0);
+        }
+        // string cast
+        if (val.type == ValueType::STRING) return val;
+        if (val.type == ValueType::FLOAT)  return Value(std::to_string(val.f));
+        if (val.type == ValueType::CHAR)   return Value(std::string(1, val.c));
+        return Value(std::to_string(val.i));
     }
 
     throw std::runtime_error("Unknown expression");
@@ -818,7 +852,7 @@ void execute(const Statement* stmt) {
                 if (m->name == "init") { ctor = m; break; }
             }
             if (!ctor) throw std::runtime_error("Constructor 'init' not found in class " + objinst->className);
-            if (objinst->arguments.size() != ctor->parameters.size())
+            if (objinst->arguments.size() != ctor->params.size())
                 throw std::runtime_error("Constructor argument count mismatch for class " + objinst->className);
             // Push new local scopes
             variables_stack.push_back({});
@@ -835,10 +869,11 @@ void execute(const Statement* stmt) {
             // Set up parameters (direct insertion)
             for (size_t i = 0; i < objinst->arguments.size(); ++i) {
                 Value argVal = evalExpr(objinst->arguments[i].get());
-                if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[ctor->parameters[i]] = argVal.f;
-                else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[ctor->parameters[i]] = argVal.c;
-                else if (argVal.type == ValueType::STRING) string_variables_stack.back()[ctor->parameters[i]] = argVal.s;
-                else variables_stack.back()[ctor->parameters[i]] = argVal.i;
+                const std::string& pname = ctor->params[i].second;
+                if (argVal.type == ValueType::FLOAT) float_variables_stack.back()[pname] = argVal.f;
+                else if (argVal.type == ValueType::CHAR) char_variables_stack.back()[pname] = argVal.c;
+                else if (argVal.type == ValueType::STRING) string_variables_stack.back()[pname] = argVal.s;
+                else variables_stack.back()[pname] = argVal.i;
             }
             // Execute constructor body
             current_class_stack.push_back(classDef->name);

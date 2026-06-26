@@ -7,7 +7,7 @@ static size_t current = 0;
 static std::vector<Token> tokens;
 static std::unique_ptr<Statement> parseFunction();
 static std::unique_ptr<Expr> parseExpression();
-static std::vector<std::string> parseParameterList();
+static std::vector<std::pair<std::string, std::string>> parseParameterList();
 static std::unique_ptr<Statement> parseClass();
 
 // Forward declaration for class name lookup
@@ -137,6 +137,29 @@ static std::unique_ptr<Expr> parsePrimary() {
             if (!match(TokenType::RPAREN))
                 throw std::runtime_error(errorMsg("Expected ')' after expression", peek()));
             return expr;
+        }
+
+        // Explicit type casts: int(x), float(x), char(x), bool(x)
+        case TokenType::INT:
+        case TokenType::FLOAT:
+        case TokenType::CHAR:
+        case TokenType::BOOL:
+        case TokenType::STRING_TYPE: {
+            std::string castType;
+            switch (token.type) {
+                case TokenType::INT:         castType = "int"; break;
+                case TokenType::FLOAT:       castType = "float"; break;
+                case TokenType::CHAR:        castType = "char"; break;
+                case TokenType::BOOL:        castType = "bool"; break;
+                case TokenType::STRING_TYPE: castType = "string"; break;
+                default: break;
+            }
+            if (!match(TokenType::LPAREN))
+                throw std::runtime_error(errorMsg("Expected '(' after type for explicit cast", peek()));
+            auto operand = parseExpression();
+            if (!match(TokenType::RPAREN))
+                throw std::runtime_error(errorMsg("Expected ')' after cast expression", peek()));
+            return std::make_unique<CastExpr>(castType, std::move(operand));
         }
 
         default:
@@ -550,17 +573,19 @@ std::vector<std::unique_ptr<Statement>> parse(const std::vector<Token>& inputTok
     return statements;
 }
 
-static std::vector<std::string> parseParameterList() {
-    std::vector<std::string> params;
+static std::vector<std::pair<std::string, std::string>> parseParameterList() {
+    std::vector<std::pair<std::string, std::string>> params;
     if (!match(TokenType::RPAREN)) {
         do {
-            // Support typed parameters: <type> <name>
-            if (peek().type == TokenType::INT || peek().type == TokenType::FLOAT || peek().type == TokenType::CHAR || peek().type == TokenType::BOOL || peek().type == TokenType::STRING_TYPE) {
-                advance(); // skip type
-            }
+            std::string typeStr;
+            if      (peek().type == TokenType::INT)         { advance(); typeStr = "int"; }
+            else if (peek().type == TokenType::FLOAT)       { advance(); typeStr = "float"; }
+            else if (peek().type == TokenType::CHAR)        { advance(); typeStr = "char"; }
+            else if (peek().type == TokenType::BOOL)        { advance(); typeStr = "bool"; }
+            else if (peek().type == TokenType::STRING_TYPE) { advance(); typeStr = "string"; }
             if (peek().type != TokenType::IDENTIFIER)
                 throw std::runtime_error(errorMsg("Expected parameter name", peek()));
-            params.push_back(advance().value);
+            params.push_back({typeStr, advance().value});
         } while (match(TokenType::COMMA));
         if (!match(TokenType::RPAREN))
             throw std::runtime_error(errorMsg("Expected ')'", peek()));
