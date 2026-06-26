@@ -5,13 +5,13 @@
 #include "parser.hpp"
 #include "ast.hpp"
 #include "semantic.hpp"
+#include "irgen.hpp"
+#include "irvm.hpp"
 #include <unordered_set>
 #include <set>
 #include <filesystem>
 
 std::unordered_set<std::string> g_class_names;
-
-void run(const std::vector<std::unique_ptr<Statement>> &statements); // Forward declaration
 
 // Track imported files to prevent circular imports
 static std::set<std::string> imported_files;
@@ -127,11 +127,20 @@ int main(int argc, char *argv[])
         // Process all imports recursively
         statements = processImports(std::move(statements), base_dir);
 
-        // Semantic analysis (type checking, scope resolution, undefined-symbol detection)
+        // Semantic analysis (type checking, scope resolution, constant folding)
         semanticAnalyze(statements);
 
-        // Execute
-        run(statements);
+        // Compile AST → IR
+        IRProgram ir = generateIR(statements);
+
+        // Optionally dump IR for inspection
+        bool dumpIr = (argc >= 3 &&
+                       (std::string(argv[2]) == "--dump-ir" ||
+                        std::string(argv[2]) == "-ir"));
+        if (dumpIr) dumpIR(ir);
+
+        // Execute IR
+        runIR(ir);
     }
     catch (std::exception &e)
     {

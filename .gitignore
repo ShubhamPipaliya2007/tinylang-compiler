@@ -1,5 +1,6 @@
 # .gitignore
 *.exe
+tinylang
 *.o
 *.obj
 *.log
