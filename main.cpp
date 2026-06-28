@@ -6,6 +6,7 @@
 #include "ast.hpp"
 #include "semantic.hpp"
 #include "irgen.hpp"
+#include "iropt.hpp"
 #include "irvm.hpp"
 #include <unordered_set>
 #include <set>
@@ -133,13 +134,16 @@ int main(int argc, char *argv[])
         // Compile AST → IR
         IRProgram ir = generateIR(statements);
 
-        // Optionally dump IR for inspection
+        // Run optimization passes: AST → IR → Pass1 → … → Pass7 → VM
+        ir = runOptimizationPasses(ir);
+
+        // Optionally dump optimized IR for inspection
         bool dumpIr = (argc >= 3 &&
                        (std::string(argv[2]) == "--dump-ir" ||
                         std::string(argv[2]) == "-ir"));
         if (dumpIr) dumpIR(ir);
 
-        // Execute IR
+        // Execute optimized IR
         runIR(ir);
     }
     catch (std::exception &e)
