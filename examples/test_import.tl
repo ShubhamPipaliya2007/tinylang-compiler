@@ -1,5 +1,5 @@
 // Simple test of import functionality
-import "math_lib.tl";
+import "../stdlib/math_lib.tl";
 
 print("Testing imported math functions:");
 

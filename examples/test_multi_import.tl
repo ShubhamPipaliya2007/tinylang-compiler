@@ -1,6 +1,6 @@
 // Test multiple imports
-import "math_lib.tl";
-import "string_lib.tl";
+import "../stdlib/math_lib.tl";
+import "../stdlib/string_lib.tl";
 
 print("=== Testing Multiple Imports ===");
 print("");

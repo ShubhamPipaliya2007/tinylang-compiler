@@ -1,8 +1,8 @@
 // Example: Demonstrating TinyLang's Import System (like Python!)
 
 // Import custom libraries - you can import multiple files!
-import "math_lib.tl";
-import "string_lib.tl";
+import "../stdlib/math_lib.tl";
+import "../stdlib/string_lib.tl";
 
 print("=== TinyLang Import System Demo ===");
 print("");
