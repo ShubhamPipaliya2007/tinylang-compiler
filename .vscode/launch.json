@@ -1,0 +1,44 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug TinyLang (current file)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/tinylang",
+      "args": ["${file}"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "lldb",
+      "preLaunchTask": "Build TinyLang"
+    },
+    {
+      "name": "Debug TinyLang (dump IR)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/tinylang",
+      "args": ["${file}", "--dump-ir"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "lldb",
+      "preLaunchTask": "Build TinyLang"
+    },
+    {
+      "name": "Debug TinyLang (sample)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/tinylang",
+      "args": ["${workspaceFolder}/examples/sample.tl"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "lldb",
+      "preLaunchTask": "Build TinyLang"
+    }
+  ]
+}

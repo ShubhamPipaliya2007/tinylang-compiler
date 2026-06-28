@@ -1,17 +1,20 @@
-# .gitignore
-*.exe
+# Build artifacts
 tinylang
+tinylang.exe
 *.o
 *.obj
+*.out
 *.log
 *.tmp
-*.out
-.vscode/
+*.tlc
+
+# Build directories
 build/
-sample.tl
-agents
-reference
-rules
+
+# Local Claude/AI tooling (project-internal, not for public repo)
+agents/
+reference/
+rules/
 CLAUDE.md
 AI_Embedded_Computing_Platform_Roadmap_2026_2029.md
 FutureScope.md

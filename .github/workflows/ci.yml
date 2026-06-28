@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "feature/**", "fix/**", "refactor/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y g++ make
+
+      - name: Build
+        run: make
+
+      - name: Run tests
+        run: make test
+
+      - name: Run examples
+        run: |
+          ./tinylang examples/test_import.tl
+          ./tinylang examples/test_multi_import.tl
+          ./tinylang examples/sample.tl
+
+      - name: Bytecode round-trip
+        run: |
+          ./tinylang examples/test_import.tl --compile
+          ./tinylang examples/test_import.tlc
+
+  build-macos:
+    name: Build (macOS)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: make
+
+      - name: Smoke test
+        run: ./tinylang examples/test_import.tl
