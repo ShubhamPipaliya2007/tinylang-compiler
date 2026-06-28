@@ -1,4 +1,5 @@
 #include "iropt.hpp"
+#include "cfg.hpp"
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -400,6 +401,7 @@ static void applyPass(IRProgram& prog, PassFn pass) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 IRProgram runOptimizationPasses(IRProgram prog) {
+    // ── Flat-list passes (Phase 3A) ──────────────────────────────────────────
     applyPass(prog, constantPropagation);
     applyPass(prog, deadCodeElimination);
     applyPass(prog, copyPropagation);
@@ -407,5 +409,15 @@ IRProgram runOptimizationPasses(IRProgram prog) {
     applyPass(prog, commonSubexprElim);
     applyPass(prog, strengthReduction);
     applyPass(prog, loopInvariantCodeMotion);
+
+    // ── CFG-based passes (Phase 3B) ──────────────────────────────────────────
+    // Liveness-based dead store elimination (global, cross-block).
+    applyPass(prog, livenessDSE);
+
+    // Second round of flat passes to clean up copies inserted by livenessDSE
+    // and any opportunities exposed by the global analysis.
+    applyPass(prog, copyPropagation);
+    applyPass(prog, deadStoreElimination);
+
     return prog;
 }
