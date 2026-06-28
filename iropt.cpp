@@ -385,6 +385,100 @@ static std::vector<IRInstr> loopInvariantCodeMotion(const std::vector<IRInstr>& 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pass 8 — SSA-based Global Value Numbering
+//
+// Renames variables into SSA form (so every definition is unique), then walks
+// the dominator tree top-down.  Each node inherits the expression table of its
+// immediate dominator: if the same LOAD/PUSH … BINOP … DECLARE pattern was
+// already computed in a dominating block, it replaces the recomputation with a
+// simple LOAD of the earlier result.  Because SSA guarantees that a variable
+// defined in block A has the same value everywhere A dominates, no invalidation
+// is needed — a stale entry is structurally impossible.
+//
+// After GVN the CFG is taken out of SSA form (phi elimination inserts LOAD/STORE
+// copies), and copy propagation + DSE clean up any leftover identity copies.
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void runGVNOnCFG(CFG& cfg) {
+    using ExprTable = std::unordered_map<std::string, std::string>;
+
+    auto getVN = [](const IRInstr& ins) -> std::string {
+        switch (ins.op) {
+        case IROp::LOAD:       return "V:" + ins.sval;
+        case IROp::PUSH_INT:   return "I:" + std::to_string(ins.ival);
+        case IROp::PUSH_FLOAT: return "F:" + std::to_string(ins.dval);
+        case IROp::PUSH_STR:   return "S:" + ins.sval;
+        case IROp::PUSH_BOOL:  return "B:" + std::to_string(ins.ival);
+        case IROp::PUSH_CHAR:  return "C:" + std::string(1, ins.cval);
+        default:               return "";
+        }
+    };
+
+    // DFS on the dominator tree; each child inherits the parent's table by value
+    // so sibling subtrees can't pollute each other.
+    std::function<void(int, ExprTable)> visit = [&](int bid, ExprTable table) {
+        BasicBlock& bb = cfg.blocks[bid];
+        std::vector<IRInstr> result;
+        result.reserve(bb.instrs.size());
+
+        size_t i = 0;
+        while (i < bb.instrs.size()) {
+            // Pattern: [LOAD|PUSH_*] [LOAD|PUSH_*] BINOP DECLARE dest
+            if (i + 4 <= bb.instrs.size()) {
+                std::string vn0 = getVN(bb.instrs[i]);
+                std::string vn1 = getVN(bb.instrs[i+1]);
+                if (!vn0.empty() && !vn1.empty() &&
+                    isBinOp(bb.instrs[i+2].op) &&
+                    bb.instrs[i+3].op == IROp::DECLARE)
+                {
+                    const std::string& dest = bb.instrs[i+3].sval;
+                    std::string key = std::to_string((int)bb.instrs[i+2].op)
+                                    + "|" + vn0 + "|" + vn1;
+                    auto it = table.find(key);
+                    if (it != table.end()) {
+                        // Redundant: replace with copy of the canonical result
+                        result.push_back({IROp::LOAD,    it->second});
+                        result.push_back({IROp::DECLARE, dest});
+                    } else {
+                        table[key] = dest;
+                        result.push_back(bb.instrs[i]);
+                        result.push_back(bb.instrs[i+1]);
+                        result.push_back(bb.instrs[i+2]);
+                        result.push_back(bb.instrs[i+3]);
+                    }
+                    i += 4;
+                    continue;
+                }
+            }
+            result.push_back(bb.instrs[i]);
+            ++i;
+        }
+        bb.instrs = std::move(result);
+
+        for (int child : bb.domChildren)
+            visit(child, table); // child gets parent's accumulated table (by value)
+    };
+
+    if (!cfg.blocks.empty()) visit(0, {});
+}
+
+static std::vector<IRInstr> gvnPass(const std::vector<IRInstr>& code) {
+    if (code.size() < 4) return code;
+
+    CFG cfg = CFG::build("__gvn", code);
+    if (cfg.blocks.size() < 2) return code; // single-block: flat CSE already covers it
+
+    buildSSA(cfg);       // rename into SSA form; builds dominator tree internally
+    runGVNOnCFG(cfg);    // eliminate cross-block redundancies
+    destroySSA(cfg);     // phi elimination (LOAD/STORE copies in predecessors)
+
+    auto result = cfg.flatten();
+    result = copyPropagation(result);    // collapse identity copies from phi elim
+    result = deadStoreElimination(result); // remove any newly dead stores
+    return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Apply a pass to main code and every function in the program
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -410,7 +504,10 @@ IRProgram runOptimizationPasses(IRProgram prog) {
     applyPass(prog, strengthReduction);
     applyPass(prog, loopInvariantCodeMotion);
 
-    // ── CFG-based passes (Phase 3B) ──────────────────────────────────────────
+    // ── CFG-based passes (Phase 3B / 3C) ────────────────────────────────────
+    // Global Value Numbering via SSA: eliminates cross-block redundant exprs.
+    applyPass(prog, gvnPass);
+
     // Liveness-based dead store elimination (global, cross-block).
     applyPass(prog, livenessDSE);
 

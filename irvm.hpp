@@ -72,12 +72,16 @@ struct VMFrame {
         throw std::runtime_error("Undefined variable: " + name);
     }
 
-    // Update nearest existing scope, or create in innermost.
+    // Update nearest existing scope, or create in outermost (scope[0]).
+    // The outermost fallback ensures SSA-renamed temporaries (x$0, x$1 …)
+    // that are first written inside a nested scope survive EXIT_SCOPE.
+    // User-visible variables are always DECLAREd before STOREd, so for them
+    // the walk always finds the binding and the fallback never fires.
     void set(const std::string& name, const IRValue& val) {
         for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
             if (it->count(name)) { (*it)[name] = val; return; }
         }
-        scopes.back()[name] = val;
+        scopes.front()[name] = val; // fallback: outermost scope survives EXIT_SCOPE
     }
 
     // Always create/overwrite in innermost scope (for DECLARE).
@@ -114,6 +118,11 @@ private:
                           std::vector<std::pair<std::string,std::string>>& out) const;
     void initObjectFields(const std::string& cls, IRObject& obj);
     const IRFunction* findMethod(const std::string& cls, const std::string& method) const;
+    // Cached variant — avoids re-walking the inheritance chain on repeated calls.
+    const IRFunction* findMethodCached(const std::string& cls, const std::string& method);
+
+    // One-slot inline cache: key "ClassName::methodName" → resolved IRFunction*.
+    std::unordered_map<std::string, const IRFunction*> methodCache_;
 
     // Execute a code block inside a given frame; returns the return value.
     IRValue runCode(const std::vector<IRInstr>& code, VMFrame& frame);

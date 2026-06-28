@@ -483,9 +483,9 @@ void destroySSA(CFG& cfg) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // livenessDSE — global dead store elimination using liveness analysis.
-// Only eliminates DECLARE instructions preceded by a simple constant push,
-// where the declared variable is dead (not used in the block after the
-// declaration and not live out of the block).
+// Eliminates DECLARE y where y is not live-out and not used later in the block,
+// provided the preceding instruction is a pure value producer (constant push or
+// LOAD).  The LOAD case covers copies inserted by GVN / phi elimination.
 // ─────────────────────────────────────────────────────────────────────────────
 std::vector<IRInstr> livenessDSE(const std::vector<IRInstr>& code) {
     if (code.empty()) return code;
@@ -499,7 +499,12 @@ std::vector<IRInstr> livenessDSE(const std::vector<IRInstr>& code) {
 
         for (size_t i = 0; i < m; ++i) {
             if (bb.instrs[i].op != IROp::DECLARE) continue;
-            if (i == 0 || !isConstPush(bb.instrs[i-1].op) || dead[i-1]) continue;
+            if (i == 0) continue;
+            // The preceding instruction must be a pure value producer with no
+            // observable effects of its own.
+            IROp prevOp = bb.instrs[i-1].op;
+            bool pureProducer = isConstPush(prevOp) || prevOp == IROp::LOAD;
+            if (!pureProducer || dead[i-1]) continue;
 
             const std::string& var = bb.instrs[i].sval;
 
@@ -515,7 +520,7 @@ std::vector<IRInstr> livenessDSE(const std::vector<IRInstr>& code) {
 
             if (!usedLater && !bb.liveOut.count(var)) {
                 dead[i]   = true;
-                dead[i-1] = true; // drop the constant push too
+                dead[i-1] = true; // drop the producer too
             }
         }
 

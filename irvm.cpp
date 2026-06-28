@@ -156,6 +156,17 @@ const IRFunction* IRVM::findMethod(const std::string& cls, const std::string& me
     return nullptr;
 }
 
+// Cached method lookup: the first call for a given (class, method) pair walks the
+// inheritance chain; subsequent calls return the cached pointer directly.
+const IRFunction* IRVM::findMethodCached(const std::string& cls, const std::string& method) {
+    std::string cacheKey = cls + "::" + method;
+    auto it = methodCache_.find(cacheKey);
+    if (it != methodCache_.end()) return it->second;
+    const IRFunction* fn = findMethod(cls, method);
+    methodCache_[cacheKey] = fn;
+    return fn;
+}
+
 // ===========================================================================
 // Function call  (free functions and class methods)
 // ===========================================================================
@@ -440,7 +451,7 @@ IRValue IRVM::runCode(const std::vector<IRInstr>& code, VMFrame& frame) {
             if (!objHeap_.count(handle))
                 throw std::runtime_error("IRVM: unknown object handle '" + handle + "' for CALL_METHOD " + ins.sval);
             std::string cls = objHeap_.at(handle).className;
-            const IRFunction* fn = findMethod(cls, ins.sval);
+            const IRFunction* fn = findMethodCached(cls, ins.sval);
             if (!fn)
                 throw std::runtime_error("IRVM: method '" + ins.sval + "' not found in class " + cls);
             std::string funcKey = fn->className + "::" + fn->name;
@@ -466,7 +477,7 @@ IRValue IRVM::runCode(const std::vector<IRInstr>& code, VMFrame& frame) {
             std::string baseClass = ci->second.baseClass;
             if (baseClass.empty())
                 throw std::runtime_error("IRVM: CALL_SUPER: class '" + frame.className + "' has no base class");
-            const IRFunction* fn = findMethod(baseClass, ins.sval);
+            const IRFunction* fn = findMethodCached(baseClass, ins.sval);
             if (!fn)
                 throw std::runtime_error("IRVM: super method '" + ins.sval + "' not found in base " + baseClass);
             std::string funcKey = fn->className + "::" + fn->name;
