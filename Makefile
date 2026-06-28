@@ -1,9 +1,33 @@
-CXX = g++
-CXXFLAGS = -std=c++17 -Wall
+CXX      = g++
+CXXFLAGS = -std=c++17 -Wall \
+           -Ilanguage/lexer \
+           -Ilanguage/parser \
+           -Ilanguage/semantic \
+           -Ilanguage/optimizer \
+           -Ilanguage/runtime
 
-SRC     = main.cpp lexer.cpp parser.cpp semantic.cpp irgen.cpp irvm.cpp iropt.cpp cfg.cpp bytecode.cpp
-HEADERS = lexer.hpp parser.hpp ast.hpp semantic.hpp ir.hpp irgen.hpp irvm.hpp iropt.hpp cfg.hpp bytecode.hpp
-TARGET  = tinylang
+SRC = language/main.cpp \
+      language/lexer/lexer.cpp \
+      language/parser/parser.cpp \
+      language/semantic/semantic.cpp \
+      language/optimizer/irgen.cpp \
+      language/optimizer/iropt.cpp \
+      language/optimizer/cfg.cpp \
+      language/optimizer/bytecode.cpp \
+      language/runtime/irvm.cpp
+
+HEADERS = language/lexer/lexer.hpp \
+          language/parser/parser.hpp \
+          language/parser/ast.hpp \
+          language/semantic/semantic.hpp \
+          language/optimizer/ir.hpp \
+          language/optimizer/irgen.hpp \
+          language/optimizer/iropt.hpp \
+          language/optimizer/cfg.hpp \
+          language/optimizer/bytecode.hpp \
+          language/runtime/irvm.hpp
+
+TARGET = tinylang
 
 $(TARGET): $(SRC) $(HEADERS)
 	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SRC)
