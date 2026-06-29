@@ -13,19 +13,25 @@ SRC = compiler/cli/main.cpp \
       compiler/middleend/irgen.cpp \
       compiler/middleend/iropt.cpp \
       compiler/middleend/cfg.cpp \
+      compiler/middleend/tirgen.cpp \
+      compiler/common/tir.cpp \
       compiler/backend/bytecode.cpp \
-      runtime/vm/irvm.cpp
+      runtime/vm/irvm.cpp \
+      runtime/vm/tirvm.cpp
 
 HEADERS = compiler/frontend/lexer.hpp \
           compiler/frontend/parser.hpp \
           compiler/frontend/ast.hpp \
           compiler/frontend/semantic.hpp \
           compiler/common/ir.hpp \
+          compiler/common/tir.hpp \
           compiler/middleend/irgen.hpp \
           compiler/middleend/iropt.hpp \
           compiler/middleend/cfg.hpp \
+          compiler/middleend/tirgen.hpp \
           compiler/backend/bytecode.hpp \
-          runtime/vm/irvm.hpp
+          runtime/vm/irvm.hpp \
+          runtime/vm/tirvm.hpp
 
 TARGET  = tinylang
 TESTDIR = tests
