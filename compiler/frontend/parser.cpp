@@ -645,6 +645,12 @@ static std::unique_ptr<Statement> parseClass() {
             if (peek().type != TokenType::IDENTIFIER)
                 throw std::runtime_error(errorMsg("Expected field name after type in class", peek()));
             std::string fieldName = advance().value;
+            // Optional [] suffix: int data[];
+            if (match(TokenType::LBRACKET)) {
+                if (!match(TokenType::RBRACKET))
+                    throw std::runtime_error(errorMsg("Expected ']' in array field declaration", peek()));
+                typeStr += "[]";
+            }
             if (!match(TokenType::SEMICOLON))
                 throw std::runtime_error(errorMsg("Expected ';' after field declaration in class", peek()));
             fields.emplace_back(typeStr, fieldName);

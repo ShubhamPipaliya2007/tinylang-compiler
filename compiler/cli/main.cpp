@@ -14,6 +14,8 @@
 // New register-based TIR pipeline
 #include "tirgen.hpp"
 #include "tirvm.hpp"
+// LLVM backend
+#include "llvmgen.hpp"
 #include <unordered_set>
 #include <set>
 #include <filesystem>
@@ -35,6 +37,34 @@ std::vector<std::unique_ptr<Statement>> parseFile(const std::string& filepath) {
     buffer << file.rdbuf();
     auto tokens = tokenize(buffer.str());
     return parse(tokens);
+}
+
+// Walk imported files (transitively) and register every class name found.
+// This must run before parse() so that object-instantiation syntax
+// ("ClassName varName(args)") is recognized in the main file.
+static void prescanForClassNames(const std::vector<Token>& tokens,
+                                  const std::string& base_dir) {
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        // Register class names defined in this file.
+        if (tokens[i].type == TokenType::CLASS &&
+            i + 1 < tokens.size() &&
+            tokens[i + 1].type == TokenType::IDENTIFIER) {
+            g_class_names.insert(tokens[i + 1].value);
+        }
+        // Recurse into imported files.
+        if (tokens[i].type == TokenType::IMPORT &&
+            i + 1 < tokens.size() &&
+            tokens[i + 1].type == TokenType::STRING_LITERAL) {
+            std::string fname = tokens[i + 1].value;
+            std::filesystem::path full = std::filesystem::path(base_dir) / fname;
+            std::ifstream f(full.string());
+            if (f.is_open()) {
+                std::stringstream buf; buf << f.rdbuf();
+                auto itoks = tokenize(buf.str());
+                prescanForClassNames(itoks, full.parent_path().string());
+            }
+        }
+    }
 }
 
 std::vector<std::unique_ptr<Statement>> processImports(
@@ -59,7 +89,8 @@ std::vector<std::unique_ptr<Statement>> processImports(
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << "Usage: tinylang <file.tl|file.tlc> "
-                     "[--compile] [--dump-ir] [--dump-cfg] [--old-ir]\n";
+                     "[--compile] [--dump-ir] [--dump-cfg] [--old-ir] "
+                     "[--emit-llvm [out.ll]]\n";
         return 1;
     }
     std::string filepath = argv[1];
@@ -71,6 +102,12 @@ int main(int argc, char* argv[]) {
         for (int i = 2; i < argc; ++i)
             if (std::string(argv[i]) == flag) return true;
         return false;
+    };
+    // Return the argument after 'flag', or "" if flag not found / no argument.
+    auto getFlagArg = [&](const char* flag) -> std::string {
+        for (int i = 2; i + 1 < argc; ++i)
+            if (std::string(argv[i]) == flag) return argv[i + 1];
+        return "";
     };
 
     bool isBytecode = filepath.size() > 4 &&
@@ -108,6 +145,7 @@ int main(int argc, char* argv[]) {
         buffer << file.rdbuf();
 
         auto tokens     = tokenize(buffer.str());
+        prescanForClassNames(tokens, base_dir);  // populate g_class_names before parse()
         auto statements = parse(tokens);
         statements      = processImports(std::move(statements), base_dir);
         semanticAnalyze(statements);
@@ -155,6 +193,29 @@ int main(int argc, char* argv[]) {
         TIR::Program tir = generateTIR(statements);
 
         if (hasFlag("--dump-ir") || hasFlag("-ir")) dumpTIR(tir);
+
+        // --emit-llvm [output.ll]: write LLVM IR and exit (no execution).
+        if (hasFlag("--emit-llvm")) {
+            std::string llvmOut = getFlagArg("--emit-llvm");
+            if (llvmOut.empty() || llvmOut[0] == '-') {
+                // No output path given: derive from input filename.
+                std::string base = filepath.substr(
+                    0, filepath.rfind('.') != std::string::npos
+                       ? filepath.rfind('.') : filepath.size());
+                llvmOut = base + ".ll";
+            }
+            std::string llvmIR = emitLLVM(tir);
+            std::ofstream out(llvmOut);
+            if (!out.is_open()) {
+                std::cerr << "Failed to write " << llvmOut << "\n";
+                return 1;
+            }
+            out << llvmIR;
+            std::cerr << "LLVM IR written to " << llvmOut << "\n";
+            std::cerr << "To compile: clang " << llvmOut
+                      << " runtime/native/tinyrt.c -o program\n";
+            return 0;
+        }
 
         if (hasFlag("--dump-cfg")) {
             // CFG analysis still works on legacy IR; generate it for this flag.

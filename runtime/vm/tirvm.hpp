@@ -50,6 +50,12 @@ private:
     // Mark all roots reachable from callStack_, then sweep the heap.
     void runGC();
 
+    // ── Native function dispatch ──────────────────────────────────────────
+    // Called by callFunc() when funcKey starts with "__tl_".
+    // Implements built-in string, array, and file operations in C++
+    // so the interpreter path works without linking tinyrt.c.
+    TLValue callNative(const std::string& name, const std::vector<TLValue>& args);
+
     // ── Evaluation ────────────────────────────────────────────────────────
     TLValue evalVal(const TIR::Val& v, const TIRFrame& frame) const;
 

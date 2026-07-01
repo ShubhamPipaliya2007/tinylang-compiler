@@ -50,7 +50,7 @@ std::vector<Token> tokenize(const std::string& input) {
             i++;
             col++;
         }
-        else if (std::isalpha(c)) {
+        else if (std::isalpha(c) || c == '_') {
             std::string id;
             size_t start_i = i;
             int start_col = col;

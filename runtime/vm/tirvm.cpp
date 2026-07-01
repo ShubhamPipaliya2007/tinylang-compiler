@@ -1,8 +1,11 @@
 #include "tirvm.hpp"
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <stdexcept>
 #include <algorithm>
+#include <cctype>
+#include <filesystem>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mark-and-sweep GC
@@ -543,6 +546,10 @@ TLValue TIRVM::callFunc(const std::string& funcKey,
                          const std::vector<TLValue>& args,
                          TLObject* thisObj,
                          const std::string& className) {
+    // Dispatch native built-ins (names starting with "__tl_").
+    if (funcKey.size() >= 5 && funcKey.compare(0, 5, "__tl_") == 0)
+        return callNative(funcKey, args);
+
     auto it = prog_->funcs.find(funcKey);
     if (it == prog_->funcs.end())
         throw std::runtime_error("TIRVM: undefined function: " + funcKey);
@@ -617,4 +624,233 @@ void TIRVM::run(const TIR::Program& prog) {
 void runTIR(const TIR::Program& prog) {
     TIRVM vm;
     vm.run(prog);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Native built-in function dispatch (names beginning with "__tl_")
+// ─────────────────────────────────────────────────────────────────────────────
+
+TLValue TIRVM::callNative(const std::string& name, const std::vector<TLValue>& args) {
+    auto str0 = [&]() -> const std::string& {
+        static const std::string empty;
+        return args.empty() ? empty : args[0].sval;
+    };
+    auto str1 = [&]() -> const std::string& {
+        static const std::string empty;
+        return args.size() < 2 ? empty : args[1].sval;
+    };
+    auto i32_0 = [&]() { return args.empty() ? 0 : args[0].p.i; };
+    auto i32_1 = [&]() { return args.size() < 2 ? 0 : args[1].p.i; };
+    auto i32_2 = [&]() { return args.size() < 3 ? 0 : args[2].p.i; };
+
+    // ── Print (already handled by Op::Print, but support as function too) ──
+    if (name == "__tl_print_i32")  { std::cout << i32_0()    << "\n"; return TLValue::nil(); }
+    if (name == "__tl_print_f64")  { std::cout << args[0].p.d << "\n"; return TLValue::nil(); }
+    if (name == "__tl_print_str")  { std::cout << str0()     << "\n"; return TLValue::nil(); }
+    if (name == "__tl_print_bool") { std::cout << (i32_0() ? "true" : "false") << "\n"; return TLValue::nil(); }
+    if (name == "__tl_print_char") { std::cout << (char)i32_0() << "\n"; return TLValue::nil(); }
+
+    // ── Conversion ────────────────────────────────────────────────────────
+    if (name == "__tl_i32_to_str")  return TLValue::fromStr(std::to_string(i32_0()));
+    if (name == "__tl_f64_to_str") {
+        std::ostringstream ss; ss << args[0].p.d; return TLValue::fromStr(ss.str());
+    }
+    if (name == "__tl_bool_to_str") return TLValue::fromStr(i32_0() ? "true" : "false");
+    if (name == "__tl_str_concat")  return TLValue::fromStr(str0() + str1());
+    if (name == "__tl_str_eq")      return TLValue::fromInt(str0() == str1() ? 1 : 0);
+
+    // ── String ────────────────────────────────────────────────────────────
+    if (name == "__tl_str_len")
+        return TLValue::fromInt((int)str0().size());
+
+    if (name == "__tl_str_sub") {
+        const std::string& s = str0();
+        int start = i32_1(), len = i32_2();
+        if (start < 0) start = 0;
+        if (start >= (int)s.size()) return TLValue::fromStr("");
+        return TLValue::fromStr(s.substr(start, std::max(0, len)));
+    }
+
+    if (name == "__tl_str_upper") {
+        std::string r = str0();
+        for (char& c : r) c = (char)std::toupper((unsigned char)c);
+        return TLValue::fromStr(r);
+    }
+    if (name == "__tl_str_lower") {
+        std::string r = str0();
+        for (char& c : r) c = (char)std::tolower((unsigned char)c);
+        return TLValue::fromStr(r);
+    }
+    if (name == "__tl_str_trim") {
+        const std::string& s = str0();
+        size_t l = s.find_first_not_of(" \t\n\r\f\v");
+        if (l == std::string::npos) return TLValue::fromStr("");
+        size_t r = s.find_last_not_of(" \t\n\r\f\v");
+        return TLValue::fromStr(s.substr(l, r - l + 1));
+    }
+    if (name == "__tl_str_contains")
+        return TLValue::fromInt(str0().find(str1()) != std::string::npos ? 1 : 0);
+
+    if (name == "__tl_str_starts_with") {
+        const std::string& s = str0(), &p = str1();
+        return TLValue::fromInt(s.size() >= p.size() && s.compare(0, p.size(), p) == 0 ? 1 : 0);
+    }
+    if (name == "__tl_str_ends_with") {
+        const std::string& s = str0(), &p = str1();
+        return TLValue::fromInt(s.size() >= p.size() &&
+                                s.compare(s.size() - p.size(), p.size(), p) == 0 ? 1 : 0);
+    }
+    if (name == "__tl_str_index_of") {
+        auto pos = str0().find(str1());
+        return TLValue::fromInt(pos == std::string::npos ? -1 : (int)pos);
+    }
+    if (name == "__tl_str_replace") {
+        std::string s = str0();
+        const std::string& from = str1();
+        const std::string& to   = args.size() < 3 ? "" : args[2].sval;
+        if (from.empty()) return TLValue::fromStr(s);
+        std::string out;
+        size_t pos = 0;
+        while (true) {
+            size_t f = s.find(from, pos);
+            if (f == std::string::npos) { out += s.substr(pos); break; }
+            out += s.substr(pos, f - pos) + to;
+            pos = f + from.size();
+        }
+        return TLValue::fromStr(out);
+    }
+    if (name == "__tl_str_to_int") {
+        try { return TLValue::fromInt(std::stoi(str0())); }
+        catch (...) { return TLValue::fromInt(0); }
+    }
+    if (name == "__tl_str_to_float") {
+        try { return TLValue::fromFloat(std::stod(str0())); }
+        catch (...) { return TLValue::fromFloat(0.0); }
+    }
+    if (name == "__tl_str_len") // duplicate guard
+        return TLValue::fromInt((int)str0().size());
+    if (name == "__tl_str_char_at") {
+        const std::string& s = str0(); int i = i32_1();
+        if (i < 0 || i >= (int)s.size()) return TLValue::fromInt(0);
+        return TLValue::fromInt((unsigned char)s[i]);
+    }
+
+    // ── Array helpers (used by Vec/Map stdlib classes) ────────────────────
+    // Allocate a new array of given capacity pre-filled with default values.
+    if (name == "__tl_alloc_arr") {
+        int cap = i32_0();
+        TLArray* arr = heap_.allocArray("any");
+        arr->elements.resize(cap > 0 ? cap : 0, TLValue::nil());
+        if (heap_.shouldCollect()) runGC();
+        return TLValue::fromArr(arr);
+    }
+    if (name == "__tl_arr_len") {
+        if (args.empty() || !args[0].isArr()) return TLValue::fromInt(0);
+        return TLValue::fromInt((int)args[0].p.arr->elements.size());
+    }
+    if (name == "__tl_load_arr") {
+        if (args.size() < 2 || !args[0].isArr()) return TLValue::nil();
+        TLArray* arr = args[0].p.arr;
+        int idx = i32_1();
+        if (idx < 0 || idx >= (int)arr->elements.size()) return TLValue::nil();
+        return arr->elements[idx];
+    }
+    if (name == "__tl_store_arr") {
+        // args: (arr, idx, val)
+        if (args.size() < 3 || !args[0].isArr()) return TLValue::nil();
+        TLArray* arr = args[0].p.arr;
+        int idx = i32_1();
+        if (idx >= 0 && idx < (int)arr->elements.size())
+            arr->elements[idx] = args[2];
+        return TLValue::nil();
+    }
+    // Resize an array: copies existing elements, pads with nil.
+    if (name == "__tl_arr_resize") {
+        if (args.empty() || !args[0].isArr()) return TLValue::nil();
+        TLArray* arr = args[0].p.arr;
+        int newCap = i32_1();
+        arr->elements.resize(newCap > 0 ? newCap : 0, TLValue::nil());
+        return TLValue::fromArr(arr);
+    }
+
+    // ── File ─────────────────────────────────────────────────────────────
+    if (name == "__tl_file_exists") {
+        std::ifstream f(str0());
+        return TLValue::fromInt(f.good() ? 1 : 0);
+    }
+    if (name == "__tl_file_read_all") {
+        std::ifstream f(str0());
+        if (!f.is_open()) return TLValue::fromStr("");
+        std::ostringstream ss; ss << f.rdbuf();
+        return TLValue::fromStr(ss.str());
+    }
+    if (name == "__tl_file_write_all") {
+        std::ofstream f(str0());
+        if (!f.is_open()) return TLValue::fromInt(0);
+        f << str1();
+        return TLValue::fromInt(f.good() ? 1 : 0);
+    }
+    if (name == "__tl_file_append") {
+        std::ofstream f(str0(), std::ios::app);
+        if (!f.is_open()) return TLValue::fromInt(0);
+        f << str1();
+        return TLValue::fromInt(f.good() ? 1 : 0);
+    }
+    if (name == "__tl_file_delete") {
+        return TLValue::fromInt(std::remove(str0().c_str()) == 0 ? 1 : 0);
+    }
+
+    // ── Directory operations ───────────────────────────────────────────────
+    if (name == "__tl_dir_exists") {
+        std::error_code ec;
+        return TLValue::fromInt(
+            std::filesystem::is_directory(str0(), ec) ? 1 : 0);
+    }
+    if (name == "__tl_dir_create") {
+        std::error_code ec;
+        return TLValue::fromInt(
+            std::filesystem::create_directories(str0(), ec) ? 1 : 0);
+    }
+    if (name == "__tl_dir_delete") {
+        std::error_code ec;
+        std::filesystem::remove_all(str0(), ec);
+        return TLValue::fromInt(ec ? 0 : 1);
+    }
+    if (name == "__tl_dir_list") {
+        // Returns a TLArray of string entries (filenames only, no path).
+        auto* arr = heap_.allocArray("str");
+        std::error_code ec;
+        std::filesystem::path dirPath(str0());
+        if (std::filesystem::is_directory(dirPath, ec)) {
+            for (const auto& entry :
+                 std::filesystem::directory_iterator(dirPath, ec)) {
+                if (entry.path().filename().string()[0] == '.') continue;
+                arr->elements.push_back(
+                    TLValue::fromStr(entry.path().filename().string()));
+            }
+        }
+        return TLValue::fromArr(arr);
+    }
+    if (name == "__tl_dir_list_count") {
+        std::error_code ec;
+        int count = 0;
+        for (const auto& entry :
+             std::filesystem::directory_iterator(str0(), ec))
+            if (entry.path().filename().string()[0] != '.') ++count;
+        return TLValue::fromInt(ec ? 0 : count);
+    }
+    if (name == "__tl_dir_list_entry") {
+        std::error_code ec;
+        int idx = (args.size() > 1) ? args[1].p.i : 0;
+        int i = 0;
+        for (const auto& entry :
+             std::filesystem::directory_iterator(str0(), ec)) {
+            if (entry.path().filename().string()[0] == '.') continue;
+            if (i++ == idx)
+                return TLValue::fromStr(entry.path().filename().string());
+        }
+        return TLValue::fromStr("");
+    }
+
+    throw std::runtime_error("TIRVM: unknown native function: " + name);
 }

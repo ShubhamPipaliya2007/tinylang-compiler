@@ -17,6 +17,7 @@ SRC = compiler/cli/main.cpp \
       compiler/middleend/tirgen.cpp \
       compiler/common/tir.cpp \
       compiler/backend/bytecode.cpp \
+      compiler/backend/llvmgen.cpp \
       runtime/vm/irvm.cpp \
       runtime/vm/tirvm.cpp
 
@@ -31,6 +32,7 @@ HEADERS = compiler/frontend/lexer.hpp \
           compiler/middleend/cfg.hpp \
           compiler/middleend/tirgen.hpp \
           compiler/backend/bytecode.hpp \
+          compiler/backend/llvmgen.hpp \
           runtime/heap/object.hpp \
           runtime/vm/irvm.hpp \
           runtime/vm/tirvm.hpp

@@ -263,6 +263,7 @@ void SemanticAnalyzer::firstPass(const std::vector<std::unique_ptr<Statement>>& 
                 FunctionInfo minfo;
                 minfo.params         = m->params;
                 minfo.hasValueReturn = scanForValueReturn(m->body);
+                minfo.returnType     = minfo.hasValueReturn ? "unknown" : "void";
                 info.methods[m->name] = std::move(minfo);
             }
             classes_[cls->name] = std::move(info);
@@ -613,11 +614,18 @@ std::string SemanticAnalyzer::analyzeExpr(const Expr* expr) {
 
     // ── Function call ─────────────────────────────────────────────────────
     if (auto* call = dynamic_cast<const CallExpr*>(expr)) {
+        // Names starting with "__tl_" are native runtime functions — no definition needed.
+        bool isNative = call->callee.size() >= 5 &&
+                        call->callee.substr(0, 5) == "__tl_";
         auto it = functions_.find(call->callee);
-        if (it == functions_.end()) {
+        if (!isNative && it == functions_.end()) {
             error("Call to undefined function '" + call->callee + "'", expr->line);
             for (const auto& a : call->arguments) analyzeExpr(a.get());
             return "unknown";
+        }
+        if (isNative) {
+            for (const auto& a : call->arguments) analyzeExpr(a.get());
+            return "unknown";  // return type inferred at runtime
         }
         if (call->arguments.size() != it->second.params.size())
             error("Function '" + call->callee + "' expects " +
