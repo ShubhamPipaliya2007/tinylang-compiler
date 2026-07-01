@@ -9,15 +9,15 @@
 // ---------------------------------------------------------------------------
 // TIRVM – interpreter for register-based TIR::Program.
 //
-// Execution model (Phase 4.3 — pointer-based object layout):
+// Execution model (Phase 4.4 — pointer-based layout + mark-and-sweep GC):
 //   • Each call frame has a register file (regs) and an alloc-slot map (mem).
 //     Both use TLValue — the typed 8-byte value word.
 //   • Objects are TLObject*; arrays are TLArray*.  No string handles.
-//   • alloc %r "name"     → mem[r] = default
-//   • load  %r %slot      → regs[r] = mem[slot]
-//   • store %val -> %slot → mem[slot] = eval(val)
-//   • Field access uses TLObject::getField/setField (name→index lookup).
-//   • TLHeap owns all objects for the program's lifetime.
+//   • callStack_ tracks every active TIRFrame* as GC roots.
+//   • After each NewObj/NewArray, if heap_.shouldCollect(), runGC() fires:
+//       1. Mark: walk callStack_, mark every TLObject*/TLArray* reachable.
+//       2. Sweep: heap_.sweep() deletes unmarked objects, clears mark bits.
+//   • FrameGuard (RAII) maintains callStack_ across all call paths.
 // ---------------------------------------------------------------------------
 
 struct TIRFrame {
@@ -33,15 +33,26 @@ public:
     void run(const TIR::Program& prog);
 
 private:
-    const TIR::Program*  prog_ = nullptr;
-    TLHeap               heap_;
+    const TIR::Program*      prog_ = nullptr;
+    TLHeap                   heap_;
+    std::vector<TIRFrame*>   callStack_;   // all active frames — GC root set
 
     std::unordered_map<std::string, const TIR::Func*> methodCache_;
 
-    // Evaluate a Val operand (register ref or inline constant → TLValue).
+    // RAII guard: pushes frame on entry, pops on any exit (return or exception).
+    struct FrameGuard {
+        std::vector<TIRFrame*>& stack;
+        FrameGuard(std::vector<TIRFrame*>& s, TIRFrame* f) : stack(s) { s.push_back(f); }
+        ~FrameGuard() { stack.pop_back(); }
+    };
+
+    // ── GC ────────────────────────────────────────────────────────────────
+    // Mark all roots reachable from callStack_, then sweep the heap.
+    void runGC();
+
+    // ── Evaluation ────────────────────────────────────────────────────────
     TLValue evalVal(const TIR::Val& v, const TIRFrame& frame) const;
 
-    // Execute one function; returns its return value.
     TLValue callFunc(const std::string& funcKey,
                      const std::vector<TLValue>& args,
                      TLObject* thisObj  = nullptr,
@@ -57,12 +68,10 @@ private:
                          TIRFrame& frame,
                          const std::vector<TLValue>& callArgs);
 
-    // Object / class helpers
+    // ── Object / class helpers ────────────────────────────────────────────
     void collectAllFields(const std::string& cls,
                           std::vector<std::pair<TIR::Type, std::string>>& out) const;
     void initObjectFields(const std::string& cls, TLObject* obj);
-    // Re-sync field alloc-slots in frame from the object's field vector
-    // after a super/method call that may have mutated shared fields.
     void resyncFieldSlots(TIRFrame& frame, TLObject* obj);
 
     const TIR::Func* findMethod(const std::string& cls,
@@ -70,7 +79,7 @@ private:
     const TIR::Func* findMethodCached(const std::string& cls,
                                       const std::string& method);
 
-    // Value helpers
+    // ── Value helpers ─────────────────────────────────────────────────────
     std::string valueToString(const TLValue& v) const;
     TLValue arith  (const TLValue& l, const TLValue& r, TIR::Op op) const;
     TLValue compare(const TLValue& l, const TLValue& r, TIR::Op op) const;

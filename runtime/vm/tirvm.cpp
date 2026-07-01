@@ -5,6 +5,24 @@
 #include <algorithm>
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Mark-and-sweep GC
+// ─────────────────────────────────────────────────────────────────────────────
+
+void TIRVM::runGC() {
+    // Mark phase: walk all roots reachable from every active call frame.
+    for (auto* frame : callStack_) {
+        if (frame->thisObj)
+            heap_.markObject(frame->thisObj);
+        for (auto& [reg, val] : frame->regs)
+            heap_.markValue(val);
+        for (auto& [reg, val] : frame->mem)
+            heap_.markValue(val);
+    }
+    // Sweep phase: free unmarked objects, clear marks on survivors.
+    heap_.sweep();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Default value for a given TIR type
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -381,6 +399,7 @@ TIRVM::ExecResult TIRVM::execBlock(const TIR::Block& block,
                 if (ctor) callFunc(ctor->className + "::" + ctor->name, args, obj, cls);
             }
             frame.regs[ins.dest] = TLValue::fromObj(obj);
+            if (heap_.shouldCollect()) runGC();
             break;
         }
 
@@ -454,6 +473,7 @@ TIRVM::ExecResult TIRVM::execBlock(const TIR::Block& block,
                 arr->elements.resize(sz, defaultValue(TIR::Type::i32()));
             }
             frame.regs[ins.dest] = TLValue::fromArr(arr);
+            if (heap_.shouldCollect()) runGC();
             break;
         }
 
@@ -533,6 +553,9 @@ TLValue TIRVM::callFunc(const std::string& funcKey,
     frame.className = className.empty() ? fn.className : className;
     frame.thisObj   = thisObj;
 
+    // Register this frame as a GC root for the duration of the call.
+    FrameGuard guard(callStack_, &frame);
+
     std::string currentLabel = "entry";
     while (true) {
         const TIR::Block* block = nullptr;
@@ -566,6 +589,9 @@ void TIRVM::run(const TIR::Program& prog) {
     frame.func      = &gi;
     frame.className = "";
     frame.thisObj   = nullptr;
+
+    // Register globalInit frame as a GC root.
+    FrameGuard guard(callStack_, &frame);
 
     std::vector<TLValue> noArgs;
     std::string currentLabel = "entry";

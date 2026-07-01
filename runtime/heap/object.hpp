@@ -5,17 +5,21 @@
 #include <cstdint>
 
 // ---------------------------------------------------------------------------
-// Production object model (Phase 4.3).
+// Production object model (Phase 4.3 + 4.4 GC).
 //
-// Replaces the handle → unordered_map design:
-//   • Objects are TLObject*  — a raw pointer into the TLHeap.
+//   • Objects are TLObject*  — raw pointer into TLHeap.
 //   • Arrays  are TLArray*   — same.
-//   • Values  are TLValue    — a typed 8-byte word (tag + payload).
+//   • Values  are TLValue    — typed 8-byte word (tag + payload union).
 //
-// Memory layout of TLObject mirrors the ABI spec (abi.md):
-//   [gcWord 8B][className/vtable placeholder][fieldDefs][fields…]
-// Fields are indexed by declaration order, not looked up by name at runtime.
+// GC word layout (per ABI doc, abi.md §4.2):
+//   bit 0  — mark bit  (set during mark phase, cleared during sweep)
+//   bit 1  — pin bit   (reserved: pinned objects are never collected)
+//   bits 2+ — reserved for ref-count / generation tag
 // ---------------------------------------------------------------------------
+
+// GC bit masks
+static constexpr uint64_t GC_MARK_BIT   = 1ULL << 0;
+static constexpr uint64_t GC_PINNED_BIT = 1ULL << 1;
 
 struct TLObject;
 struct TLArray;
@@ -106,17 +110,24 @@ struct TLArray {
     std::vector<TLValue> elements;
 };
 
-// ─── Heap allocator ───────────────────────────────────────────────────────────
-// Phase 4.3: ownership via raw pointers tracked in vectors.
-// All objects/arrays live until TLHeap is destroyed.
-// Phase 4.5 will replace this with a bump-pointer + GC allocator.
+// ─── Heap allocator + mark-and-sweep GC ─────────────────────────────────────
+// Phase 4.4: stop-the-world mark-and-sweep.
+//
+// The TIRVM calls markValue/markObject/markArray for every root (register,
+// alloc-slot, thisObj) in every active frame, then calls sweep() to collect
+// unreachable objects.  The mark bit lives in gcWord bit 0.
+//
+// Pinned objects (gcWord & GC_PINNED_BIT) are never freed by sweep().
+// Phase 4.5 will replace the allocator with a bump-pointer arena.
 
 class TLHeap {
 public:
+    // ── Allocation ────────────────────────────────────────────────────────
     TLObject* allocObject(const std::string& className) {
         auto* obj = new TLObject;
         obj->className = className;
         objects_.push_back(obj);
+        ++allocsSinceGC_;
         return obj;
     }
 
@@ -124,8 +135,76 @@ public:
         auto* arr = new TLArray;
         arr->elemType = elemType;
         arrays_.push_back(arr);
+        ++allocsSinceGC_;
         return arr;
     }
+
+    // ── GC threshold ──────────────────────────────────────────────────────
+    static constexpr size_t GC_THRESHOLD = 256;
+    bool shouldCollect() const {
+        return allocsSinceGC_ >= GC_THRESHOLD;
+    }
+    size_t objectCount() const { return objects_.size() + arrays_.size(); }
+
+    // ── Mark phase (called by TIRVM for each root) ────────────────────────
+    void markValue(const TLValue& v) {
+        if      (v.isObj()) markObject(v.p.obj);
+        else if (v.isArr()) markArray(v.p.arr);
+    }
+
+    void markObject(TLObject* obj) {
+        if (!obj || (obj->gcWord & GC_MARK_BIT)) return;
+        obj->gcWord |= GC_MARK_BIT;
+        for (auto& fv : obj->fields) markValue(fv);  // traverse object graph
+    }
+
+    void markArray(TLArray* arr) {
+        if (!arr || (arr->gcWord & GC_MARK_BIT)) return;
+        arr->gcWord |= GC_MARK_BIT;
+        for (auto& ev : arr->elements) markValue(ev);
+    }
+
+    // ── Sweep phase ───────────────────────────────────────────────────────
+    // Deletes unmarked objects, clears marks on survivors.
+    // Returns count of freed objects (for stats / testing).
+    size_t sweep() {
+        size_t freed = 0;
+
+        auto oit = objects_.begin();
+        while (oit != objects_.end()) {
+            TLObject* obj = *oit;
+            if ((obj->gcWord & GC_MARK_BIT) || (obj->gcWord & GC_PINNED_BIT)) {
+                obj->gcWord &= ~GC_MARK_BIT;  // clear for next cycle
+                ++oit;
+            } else {
+                delete obj;
+                oit = objects_.erase(oit);
+                ++freed;
+            }
+        }
+
+        auto ait = arrays_.begin();
+        while (ait != arrays_.end()) {
+            TLArray* arr = *ait;
+            if ((arr->gcWord & GC_MARK_BIT) || (arr->gcWord & GC_PINNED_BIT)) {
+                arr->gcWord &= ~GC_MARK_BIT;
+                ++ait;
+            } else {
+                delete arr;
+                ait = arrays_.erase(ait);
+                ++freed;
+            }
+        }
+
+        allocsSinceGC_ = 0;
+        totalCollected_ += freed;
+        ++gcCycles_;
+        return freed;
+    }
+
+    // ── Stats ─────────────────────────────────────────────────────────────
+    size_t gcCycles()       const { return gcCycles_; }
+    size_t totalCollected() const { return totalCollected_; }
 
     ~TLHeap() {
         for (auto* p : objects_) delete p;
@@ -135,4 +214,7 @@ public:
 private:
     std::vector<TLObject*> objects_;
     std::vector<TLArray*>  arrays_;
+    size_t allocsSinceGC_  = 0;
+    size_t gcCycles_        = 0;
+    size_t totalCollected_  = 0;
 };
