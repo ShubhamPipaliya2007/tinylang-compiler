@@ -4,7 +4,8 @@ CXXFLAGS = -std=c++17 -Wall \
            -Icompiler/middleend \
            -Icompiler/backend \
            -Icompiler/common \
-           -Iruntime/vm
+           -Iruntime/vm \
+           -Iruntime/heap
 
 SRC = compiler/cli/main.cpp \
       compiler/frontend/lexer.cpp \
@@ -30,6 +31,7 @@ HEADERS = compiler/frontend/lexer.hpp \
           compiler/middleend/cfg.hpp \
           compiler/middleend/tirgen.hpp \
           compiler/backend/bytecode.hpp \
+          runtime/heap/object.hpp \
           runtime/vm/irvm.hpp \
           runtime/vm/tirvm.hpp
 
